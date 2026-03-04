@@ -1,0 +1,478 @@
+---
+title: Fit Analysis
+description: Model fit scoring and analysis API
+---
+
+# Fit Analysis API
+
+The `fit` module analyzes how well models run on specific hardware, computing fit levels, run modes, and multi-dimensional scores.
+
+## Core Types
+
+### `ModelFit`
+
+Complete analysis of a model's fit on specific hardware:
+
+```rust
+pub struct ModelFit {
+    pub model: LlmModel,
+    pub fit_level: FitLevel,
+    pub run_mode: RunMode,
+    pub memory_required_gb: f64,
+    pub memory_available_gb: f64,
+    pub utilization_pct: f64,
+    pub notes: Vec<String>,
+    pub moe_offloaded_gb: Option<f64>,
+    pub score: f64,
+    pub score_components: ScoreComponents,
+    pub estimated_tps: f64,
+    pub best_quant: String,
+    pub use_case: UseCase,
+    pub runtime: InferenceRuntime,
+    pub installed: bool,
+}
+```
+
+**Key Fields:**
+
+- `model` - The analyzed model
+- `fit_level` - Memory fit quality (Perfect, Good, Marginal, TooTight)
+- `run_mode` - Execution path (Gpu, CpuOffload, CpuOnly, MoeOffload)
+- `memory_required_gb` - Memory needed for this run mode
+- `memory_available_gb` - Memory pool capacity
+- `utilization_pct` - Memory utilization percentage
+- `notes` - Human-readable analysis notes
+- `score` - Composite score (0-100)
+- `score_components` - Individual dimension scores
+- `estimated_tps` - Estimated tokens per second
+- `best_quant` - Optimal quantization for this hardware
+- `runtime` - Inference runtime (MLX or llama.cpp)
+- `installed` - Whether model is locally installed
+
+### `FitLevel`
+
+Memory fit quality:
+
+```rust
+pub enum FitLevel {
+    Perfect,  // Recommended memory met on GPU
+    Good,     // Fits with headroom
+    Marginal, // Minimum memory met but tight
+    TooTight, // Does not fit in available memory
+}
+```
+
+**Fit Criteria:**
+
+- **Perfect**: GPU path with recommended memory available
+- **Good**: Adequate headroom (1.2x minimum or more)
+- **Marginal**: Meets minimum but tight
+- **TooTight**: Insufficient memory
+
+**Note:** CPU-only paths cap at Marginal since they're always a compromise.
+
+### `RunMode`
+
+Execution path:
+
+```rust
+pub enum RunMode {
+    Gpu,        // Fully loaded into VRAM (fast)
+    MoeOffload, // MoE: active experts in VRAM, inactive in RAM
+    CpuOffload, // Partial GPU, spills to RAM (mixed)
+    CpuOnly,    // Entirely in system RAM (slow)
+}
+```
+
+**Performance Order:**
+
+1. **Gpu**: Full GPU inference (fastest)
+2. **MoeOffload**: Expert switching with some latency
+3. **CpuOffload**: Significant slowdown from memory transfers
+4. **CpuOnly**: Slowest, but works without GPU
+
+### `InferenceRuntime`
+
+Software framework:
+
+```rust
+pub enum InferenceRuntime {
+    LlamaCpp, // llama.cpp / Ollama
+    Mlx,      // Apple MLX framework
+}
+```
+
+### `ScoreComponents`
+
+Multi-dimensional scoring:
+
+```rust
+pub struct ScoreComponents {
+    pub quality: f64,  // 0-100
+    pub speed: f64,    // 0-100
+    pub fit: f64,      // 0-100
+    pub context: f64,  // 0-100
+}
+```
+
+**Dimensions:**
+
+- **Quality**: Model capability (params + family + quant + task alignment)
+- **Speed**: Estimated tok/s vs. target for use case
+- **Fit**: Memory efficiency (50-80% utilization = optimal)
+- **Context**: Context window vs. use case needs
+
+### `SortColumn`
+
+Sort options for ranked models:
+
+```rust
+pub enum SortColumn {
+    Score,       // Composite score (default)
+    Tps,         // Estimated tokens/second
+    Params,      // Parameter count
+    MemPct,      // Memory utilization
+    Ctx,         // Context length
+    ReleaseDate, // Release date
+    UseCase,     // Use case category
+}
+```
+
+## Functions
+
+### `ModelFit::analyze()`
+
+Analyzes model fit on hardware:
+
+```rust
+pub fn analyze(model: &LlmModel, system: &SystemSpecs) -> Self
+```
+
+**Parameters:**
+- `model` - Model to analyze
+- `system` - System hardware specs
+
+**Returns:** Complete fit analysis
+
+**Example:**
+
+```rust
+use llmfit_core::{ModelFit, ModelDatabase, SystemSpecs};
+
+let specs = SystemSpecs::detect();
+let db = ModelDatabase::new();
+
+let model = &db.get_all_models()[0];
+let fit = ModelFit::analyze(model, &specs);
+
+println!("{}: {}", model.name, fit.fit_text());
+println!("  Run mode: {}", fit.run_mode_text());
+println!("  Memory: {:.2}/{:.2} GB ({:.1}%)",
+    fit.memory_required_gb,
+    fit.memory_available_gb,
+    fit.utilization_pct
+);
+println!("  Speed: {:.1} tok/s", fit.estimated_tps);
+println!("  Score: {:.1}/100", fit.score);
+
+for note in &fit.notes {
+    println!("  - {}", note);
+}
+```
+
+### `ModelFit::analyze_with_context_limit()`
+
+Analyzes with custom context limit:
+
+```rust
+pub fn analyze_with_context_limit(
+    model: &LlmModel,
+    system: &SystemSpecs,
+    context_limit: Option<u32>,
+) -> Self
+```
+
+**Parameters:**
+- `model` - Model to analyze
+- `system` - System hardware specs
+- `context_limit` - Maximum context length to assume
+
+**Example:**
+
+```rust
+// Analyze with 8K context instead of model's full 128K
+let fit = ModelFit::analyze_with_context_limit(
+    model,
+    &specs,
+    Some(8192)
+);
+
+// This reduces memory estimates for long-context models
+```
+
+### Helper Methods
+
+```rust
+impl ModelFit {
+    pub fn fit_emoji(&self) -> &str;      // "🟢" / "🟡" / "🟠" / "🔴"
+    pub fn fit_text(&self) -> &str;       // "Perfect" / "Good" / etc.
+    pub fn runtime_text(&self) -> &str;   // "llama.cpp" / "MLX"
+    pub fn run_mode_text(&self) -> &str;  // "GPU" / "CPU" / etc.
+}
+```
+
+## Ranking Functions
+
+### `rank_models_by_fit()`
+
+Ranks models by composite score:
+
+```rust
+pub fn rank_models_by_fit(models: Vec<ModelFit>) -> Vec<ModelFit>
+```
+
+**Returns:** Models sorted by score (best first), with TooTight at end
+
+**Example:**
+
+```rust
+use llmfit_core::{rank_models_by_fit, ModelFit, FitLevel};
+
+let specs = SystemSpecs::detect();
+let db = ModelDatabase::new();
+
+let fits: Vec<ModelFit> = db.get_all_models()
+    .iter()
+    .map(|m| ModelFit::analyze(m, &specs))
+    .collect();
+
+let ranked = rank_models_by_fit(fits);
+
+println!("Top 5 models:");
+for (i, fit) in ranked.iter()
+    .filter(|f| f.fit_level != FitLevel::TooTight)
+    .take(5)
+    .enumerate()
+{
+    println!("{}. {} - Score {:.1}, {:.1} tok/s",
+        i + 1,
+        fit.model.name,
+        fit.score,
+        fit.estimated_tps
+    );
+}
+```
+
+### `rank_models_by_fit_opts()`
+
+Ranks with installed-first option:
+
+```rust
+pub fn rank_models_by_fit_opts(
+    models: Vec<ModelFit>,
+    installed_first: bool,
+) -> Vec<ModelFit>
+```
+
+**Example:**
+
+```rust
+// Rank with installed models first
+let ranked = rank_models_by_fit_opts(fits, true);
+```
+
+### `rank_models_by_fit_opts_col()`
+
+Ranks with custom sort column:
+
+```rust
+pub fn rank_models_by_fit_opts_col(
+    models: Vec<ModelFit>,
+    installed_first: bool,
+    sort_column: SortColumn,
+) -> Vec<ModelFit>
+```
+
+**Example:**
+
+```rust
+use llmfit_core::SortColumn;
+
+// Sort by speed (tok/s)
+let by_speed = rank_models_by_fit_opts_col(
+    fits.clone(),
+    false,
+    SortColumn::Tps
+);
+
+// Sort by parameter count
+let by_size = rank_models_by_fit_opts_col(
+    fits.clone(),
+    false,
+    SortColumn::Params
+);
+
+// Sort by release date (newest first)
+let by_date = rank_models_by_fit_opts_col(
+    fits.clone(),
+    false,
+    SortColumn::ReleaseDate
+);
+```
+
+## Scoring Algorithm
+
+The composite score combines four dimensions with use-case-specific weights:
+
+### Quality Score (0-100)
+
+Based on:
+- Parameter count tier (1B = 45, 7B = 75, 70B+ = 95)
+- Family reputation (Qwen +2, DeepSeek +3, Llama +2)
+- Quantization penalty (Q8 = 0, Q4 = -5, Q2 = -12)
+- Task alignment bonus (coding models on coding tasks +6)
+
+### Speed Score (0-100)
+
+Normalized against use-case target:
+- General/Coding/Chat: 40 tok/s target
+- Reasoning: 25 tok/s target
+- Embedding: 200 tok/s target
+
+Score = (estimated_tps / target) * 100, capped at 100.
+
+### Fit Score (0-100)
+
+Memory efficiency:
+- 50-80% utilization: 100 points (sweet spot)
+- 30-50% utilization: 60-100 points (scaled)
+- 80-90% utilization: 70 points (getting tight)
+- 90-100% utilization: 50 points (very tight)
+- >100% utilization: 0 points (doesn't fit)
+
+### Context Score (0-100)
+
+Context window vs. use case needs:
+- Meets or exceeds target: 100 points
+- At least half of target: 70 points
+- Below half: 30 points
+
+### Weighted Composite
+
+Use-case-specific weights `[Quality, Speed, Fit, Context]`:
+
+- **General**: [0.45, 0.30, 0.15, 0.10]
+- **Coding**: [0.50, 0.20, 0.15, 0.15]
+- **Reasoning**: [0.55, 0.15, 0.15, 0.15]
+- **Chat**: [0.40, 0.35, 0.15, 0.10]
+- **Multimodal**: [0.50, 0.20, 0.15, 0.15]
+- **Embedding**: [0.30, 0.40, 0.20, 0.10]
+
+**Example:**
+
+```rust
+let fit = ModelFit::analyze(model, &specs);
+let sc = fit.score_components;
+
+println!("Quality: {:.1}/100", sc.quality);
+println!("Speed: {:.1}/100", sc.speed);
+println!("Fit: {:.1}/100", sc.fit);
+println!("Context: {:.1}/100", sc.context);
+println!("Weighted: {:.1}/100", fit.score);
+```
+
+## Speed Estimation
+
+Token generation is memory-bandwidth-bound. The estimator uses:
+
+### Bandwidth-Based (Preferred)
+
+For recognized GPUs:
+
+```
+model_gb = params * bytes_per_param(quant)
+raw_tps = (bandwidth_gbps / model_gb) * 0.55
+estimated_tps = raw_tps * run_mode_factor
+```
+
+Efficiency factor (0.55) accounts for:
+- Kernel launch overhead
+- KV-cache reads
+- Memory controller inefficiency
+
+**Run mode factors:**
+- Gpu: 1.0
+- MoeOffload: 0.8
+- CpuOffload: 0.5
+- CpuOnly: 0.3
+
+### Fallback (Unknown GPUs)
+
+Fixed constants by backend:
+- Metal + MLX: 250
+- Metal + llama.cpp: 160
+- CUDA: 220
+- ROCm: 180
+- Vulkan: 150
+- SYCL: 100
+- CPU ARM: 90
+- CPU x86: 70
+- Ascend: 390
+
+**Example:**
+
+```rust
+let fit = ModelFit::analyze(model, &specs);
+
+println!("Estimated speed: {:.1} tok/s", fit.estimated_tps);
+
+if fit.runtime == InferenceRuntime::Mlx {
+    println!("Using MLX runtime on Apple Silicon");
+}
+```
+
+## Fit Analysis Notes
+
+The `notes` field contains human-readable explanations:
+
+```rust
+for note in &fit.notes {
+    println!("  {}", note);
+}
+```
+
+**Common notes:**
+- "GPU: model loaded into VRAM"
+- "Unified memory: GPU and CPU share the same pool"
+- "MoE: 2/8 experts active in VRAM (12.5 GB) at Q4_K_M"
+- "Inactive experts offloaded to system RAM (18.3 GB)"
+- "GPU: insufficient VRAM, spilling to system RAM"
+- "Best quantization for hardware: Q4_K_M (model default: Q8_0)"
+- "MLX runtime: ~35% faster than llama.cpp (85.2 vs 63.1 tok/s)"
+- "Baseline estimated speed: 45.3 tok/s"
+
+## Backend Compatibility
+
+```rust
+pub fn backend_compatible(model: &LlmModel, system: &SystemSpecs) -> bool
+```
+
+**Example:**
+
+```rust
+use llmfit_core::fit::backend_compatible;
+
+let db = ModelDatabase::new();
+let specs = SystemSpecs::detect();
+
+for model in db.get_all_models() {
+    if !backend_compatible(model, &specs) {
+        println!("{}: incompatible with {}",
+            model.name,
+            specs.backend.label()
+        );
+    }
+}
+```
+
+MLX models require Apple Silicon (Metal backend + unified memory).

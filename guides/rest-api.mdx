@@ -1,0 +1,637 @@
+---
+title: REST API
+description: HTTP API for cluster scheduling and remote model fit queries
+---
+
+The `llmfit serve` command starts an HTTP API that exposes node-local model fit analysis. This is designed for cluster schedulers, aggregators, and remote clients that need to query hardware compatibility across multiple nodes.
+
+## Starting the Server
+
+```bash
+# Default: bind to 0.0.0.0:8787
+llmfit serve
+
+# Custom host and port
+llmfit serve --host 127.0.0.1 --port 8080
+
+# With global flags (memory override, context cap)
+llmfit --memory 24G --max-context 8192 serve --host 0.0.0.0 --port 8787
+```
+
+<ParamField path="--host" type="string" default="0.0.0.0">
+  Host interface to bind. Use `0.0.0.0` to accept connections from any interface, or `127.0.0.1` for localhost-only.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8787">
+  Port to listen on.
+</ParamField>
+
+Global flags (`--memory`, `--max-context`) apply to all API responses, overriding hardware detection and memory estimation.
+
+## Base URL
+
+Default local base URL:
+
+```
+http://127.0.0.1:8787
+```
+
+For remote access, replace `127.0.0.1` with the server's IP or hostname.
+
+## Endpoints
+
+### `GET /health`
+
+**Liveness probe**. Returns a simple status object indicating the server is running.
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  }
+}
+```
+
+**Status codes:**
+- `200 OK` - Server is healthy
+
+**Example:**
+
+```bash
+curl http://localhost:8787/health
+```
+
+---
+
+### `GET /api/v1/system`
+
+**Node identity and hardware specs**. Returns detected CPU, RAM, GPU, and backend info.
+
+**Response:**
+
+```json
+{
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  },
+  "system": {
+    "total_ram_gb": 62.23,
+    "available_ram_gb": 41.08,
+    "cpu_cores": 14,
+    "cpu_name": "Intel(R) Core(TM) Ultra 7 165U",
+    "has_gpu": true,
+    "gpu_vram_gb": 24.0,
+    "gpu_name": "NVIDIA RTX 4090",
+    "gpu_count": 1,
+    "unified_memory": false,
+    "backend": "CUDA",
+    "gpus": [
+      {
+        "name": "NVIDIA RTX 4090",
+        "vram_gb": 24.0,
+        "count": 1,
+        "unified_memory": false,
+        "backend": "CUDA"
+      }
+    ]
+  }
+}
+```
+
+**Fields:**
+
+<ParamField path="node.name" type="string">
+  Node hostname
+</ParamField>
+
+<ParamField path="node.os" type="string">
+  Operating system (linux, macos, windows)
+</ParamField>
+
+<ParamField path="system.total_ram_gb" type="number">
+  Total system RAM in gigabytes
+</ParamField>
+
+<ParamField path="system.available_ram_gb" type="number">
+  Available system RAM in gigabytes
+</ParamField>
+
+<ParamField path="system.cpu_cores" type="integer">
+  Total CPU core count
+</ParamField>
+
+<ParamField path="system.cpu_name" type="string">
+  CPU model name
+</ParamField>
+
+<ParamField path="system.has_gpu" type="boolean">
+  Whether at least one GPU is detected
+</ParamField>
+
+<ParamField path="system.gpu_vram_gb" type="number | null">
+  Total GPU VRAM across all detected GPUs (null if no GPU)
+</ParamField>
+
+<ParamField path="system.gpu_name" type="string | null">
+  Primary GPU model name (null if no GPU)
+</ParamField>
+
+<ParamField path="system.gpu_count" type="integer">
+  Number of detected GPUs
+</ParamField>
+
+<ParamField path="system.unified_memory" type="boolean">
+  Whether the system uses unified memory (Apple Silicon)
+</ParamField>
+
+<ParamField path="system.backend" type="string">
+  Acceleration backend: CUDA, Metal, ROCm, SYCL, CPU (x86), CPU (ARM), Ascend
+</ParamField>
+
+<ParamField path="system.gpus" type="array">
+  Array of detected GPU objects with per-GPU details
+</ParamField>
+
+**Status codes:**
+- `200 OK` - System info returned
+
+**Example:**
+
+```bash
+curl http://localhost:8787/api/v1/system | jq '.system'
+```
+
+---
+
+### `GET /api/v1/models`
+
+**Filtered and sorted model fit list**. Returns an array of models with fit analysis, scoring, and runtime info. Supports extensive query parameters for filtering.
+
+**Query Parameters:**
+
+<ParamField path="limit" type="integer" query>
+  Maximum number of models to return. Alias: `n`
+</ParamField>
+
+<ParamField path="perfect" type="boolean" query>
+  When `true`, only return models with perfect fit level (overrides `min_fit`)
+</ParamField>
+
+<ParamField path="min_fit" type="enum" query>
+  Minimum fit level to include.
+  
+  **Values:** `perfect`, `good`, `marginal`, `too_tight`
+  
+  Default: `marginal` (includes all but too_tight)
+</ParamField>
+
+<ParamField path="runtime" type="enum" query>
+  Filter by inference runtime.
+  
+  **Values:** `any`, `mlx`, `llamacpp`
+  
+  Default: `any`
+</ParamField>
+
+<ParamField path="use_case" type="enum" query>
+  Filter by use case category.
+  
+  **Values:** `general`, `coding`, `reasoning`, `chat`, `multimodal`, `embedding`
+</ParamField>
+
+<ParamField path="provider" type="string" query>
+  Provider substring filter (e.g., `Meta`, `Qwen`, `Mistral`)
+</ParamField>
+
+<ParamField path="search" type="string" query>
+  Free-text filter across name, provider, parameter count, use case, and category. All space-separated terms must match (AND logic).
+</ParamField>
+
+<ParamField path="sort" type="enum" query>
+  Sort column.
+  
+  **Values:** `score`, `tps`, `params`, `mem`, `ctx`, `date`, `use_case`
+  
+  Default: `score`
+</ParamField>
+
+<ParamField path="include_too_tight" type="boolean" query>
+  Include unrunnable models (fit_level = `too_tight`).
+  
+  Default: `true` for `/models`, `false` for `/models/top`
+</ParamField>
+
+<ParamField path="max_context" type="integer" query>
+  Per-request context cap for memory estimation. Overrides server startup `--max-context` flag.
+</ParamField>
+
+**Response:**
+
+```json
+{
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  },
+  "system": { "...": "..." },
+  "total_models": 206,
+  "returned_models": 20,
+  "filters": {
+    "limit": 20,
+    "min_fit": "marginal",
+    "runtime": "any",
+    "use_case": null,
+    "provider": null,
+    "search": null,
+    "sort": "score",
+    "include_too_tight": true,
+    "max_context": null
+  },
+  "models": [
+    {
+      "name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "provider": "Qwen",
+      "parameter_count": "7B",
+      "params_b": 7.0,
+      "context_length": 32768,
+      "use_case": "Coding",
+      "category": "Coding",
+      "release_date": "2025-03-14",
+      "is_moe": false,
+      "fit_level": "good",
+      "fit_label": "Good",
+      "run_mode": "gpu",
+      "run_mode_label": "GPU",
+      "score": 86.5,
+      "score_components": {
+        "quality": 87.0,
+        "speed": 81.2,
+        "fit": 90.1,
+        "context": 88.0
+      },
+      "estimated_tps": 42.5,
+      "runtime": "llamacpp",
+      "runtime_label": "llama.cpp",
+      "best_quant": "Q5_K_M",
+      "memory_required_gb": 5.8,
+      "memory_available_gb": 24.0,
+      "utilization_pct": 24.2,
+      "notes": [],
+      "gguf_sources": [
+        {
+          "provider": "unsloth",
+          "repo": "unsloth/Qwen2.5-Coder-7B-Instruct-GGUF"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Model Fields:**
+
+<ParamField path="name" type="string">
+  Full HuggingFace model name
+</ParamField>
+
+<ParamField path="provider" type="string">
+  Model provider (Meta, Qwen, Mistral, etc.)
+</ParamField>
+
+<ParamField path="parameter_count" type="string">
+  Human-readable parameter count (e.g., "7B", "70B")
+</ParamField>
+
+<ParamField path="params_b" type="number">
+  Numeric parameter count in billions
+</ParamField>
+
+<ParamField path="context_length" type="integer">
+  Maximum context window in tokens
+</ParamField>
+
+<ParamField path="use_case" type="string">
+  Model-declared use case string
+</ParamField>
+
+<ParamField path="category" type="string">
+  Inferred category: General, Coding, Reasoning, Chat, Multimodal, Embedding
+</ParamField>
+
+<ParamField path="release_date" type="string | null">
+  ISO 8601 date string (YYYY-MM-DD) or null
+</ParamField>
+
+<ParamField path="is_moe" type="boolean">
+  Whether the model uses Mixture-of-Experts architecture
+</ParamField>
+
+<ParamField path="fit_level" type="enum">
+  Fit level: `perfect`, `good`, `marginal`, `too_tight`
+</ParamField>
+
+<ParamField path="fit_label" type="string">
+  Human-readable fit label
+</ParamField>
+
+<ParamField path="run_mode" type="enum">
+  Execution mode: `gpu`, `moe`, `cpu_offload`, `cpu_only`
+</ParamField>
+
+<ParamField path="run_mode_label" type="string">
+  Human-readable run mode label
+</ParamField>
+
+<ParamField path="score" type="number">
+  Composite score (0-100) combining Quality, Speed, Fit, Context dimensions
+</ParamField>
+
+<ParamField path="score_components" type="object">
+  Breakdown of the four scoring dimensions (each 0-100)
+</ParamField>
+
+<ParamField path="estimated_tps" type="number">
+  Estimated tokens per second based on hardware and quantization
+</ParamField>
+
+<ParamField path="runtime" type="enum">
+  Inference runtime: `mlx`, `llamacpp`
+</ParamField>
+
+<ParamField path="runtime_label" type="string">
+  Human-readable runtime label
+</ParamField>
+
+<ParamField path="best_quant" type="string">
+  Best quantization that fits this hardware (e.g., Q5_K_M, Q4_K_M)
+</ParamField>
+
+<ParamField path="memory_required_gb" type="number">
+  Memory required to run the model in GB
+</ParamField>
+
+<ParamField path="memory_available_gb" type="number">
+  Available memory on this node in GB (VRAM or RAM depending on run mode)
+</ParamField>
+
+<ParamField path="utilization_pct" type="number">
+  Memory utilization percentage (memory_required / memory_available * 100)
+</ParamField>
+
+<ParamField path="notes" type="array">
+  Array of human-readable notes (e.g., MoE offloading, CPU-only warnings)
+</ParamField>
+
+<ParamField path="gguf_sources" type="array">
+  Array of known GGUF download sources with provider and HuggingFace repo
+</ParamField>
+
+**Status codes:**
+- `200 OK` - Models returned
+- `400 Bad Request` - Invalid filter values
+- `500 Internal Server Error` - Server error
+
+**Examples:**
+
+```bash
+# Top 20 models, sorted by score
+curl "http://localhost:8787/api/v1/models?limit=20&min_fit=marginal&sort=score"
+
+# Perfect fits only, coding category
+curl "http://localhost:8787/api/v1/models?perfect=true&use_case=coding&limit=10"
+
+# Search for "llama 8b" models
+curl "http://localhost:8787/api/v1/models?search=llama%208b&limit=5"
+
+# Filter by provider and runtime
+curl "http://localhost:8787/api/v1/models?provider=Qwen&runtime=llamacpp&limit=10"
+
+# Sort by release date (newest first)
+curl "http://localhost:8787/api/v1/models?sort=date&limit=10"
+```
+
+---
+
+### `GET /api/v1/models/top`
+
+**Key scheduling endpoint**. Returns top runnable models for this node, with conservative defaults suitable for production placement decisions.
+
+**Query Parameters:**
+
+Same as `/api/v1/models`, with different defaults:
+
+- `limit`: Defaults to `5` (vs. no limit on `/models`)
+- `include_too_tight`: Defaults to `false` (vs. `true` on `/models`)
+
+All other parameters work identically.
+
+**Response:**
+
+Same schema as `/api/v1/models`, but returns only top N runnable models by default.
+
+**Status codes:**
+- `200 OK` - Top models returned
+- `400 Bad Request` - Invalid filter values
+- `500 Internal Server Error` - Server error
+
+**Examples:**
+
+```bash
+# Top 5 runnable models (default)
+curl "http://localhost:8787/api/v1/models/top"
+
+# Top 10 with minimum good fit
+curl "http://localhost:8787/api/v1/models/top?limit=10&min_fit=good"
+
+# Top 5 coding models
+curl "http://localhost:8787/api/v1/models/top?limit=5&use_case=coding"
+
+# Top 3 MLX models (Apple Silicon)
+curl "http://localhost:8787/api/v1/models/top?limit=3&runtime=mlx"
+```
+
+---
+
+### `GET /api/v1/models/{name}`
+
+**Path-constrained search**. Equivalent to `/api/v1/models?search={name}`. Returns models matching the path parameter.
+
+**Path Parameters:**
+
+<ParamField path="name" type="string" required>
+  Model name or search term (URL-encoded)
+</ParamField>
+
+**Query Parameters:**
+
+All parameters from `/api/v1/models` are supported.
+
+**Response:**
+
+Same schema as `/api/v1/models`.
+
+**Status codes:**
+- `200 OK` - Matching models returned
+- `400 Bad Request` - Invalid filter values
+- `500 Internal Server Error` - Server error
+
+**Examples:**
+
+```bash
+# Search for Mistral models
+curl "http://localhost:8787/api/v1/models/Mistral"
+
+# Search with additional filters
+curl "http://localhost:8787/api/v1/models/Llama?runtime=llamacpp&limit=5"
+```
+
+---
+
+## Error Handling
+
+Invalid filter values return HTTP 400 with an error message:
+
+```json
+{
+  "error": "invalid min_fit value: use perfect|good|marginal|too_tight"
+}
+```
+
+Server errors return HTTP 500:
+
+```json
+{
+  "error": "internal server error: <details>"
+}
+```
+
+## Client Integration Patterns
+
+### 1. Polling Pattern for Schedulers
+
+For each node agent:
+
+1. Call `GET /health` to verify liveness
+2. Call `GET /api/v1/system` to get node identity and hardware
+3. Call `GET /api/v1/models/top?limit=K&min_fit=good` to get top runnable models
+4. Attach node metadata and forward to your central scheduler
+
+**Example aggregator:**
+
+```python
+import requests
+import json
+
+nodes = ["http://node1:8787", "http://node2:8787", "http://node3:8787"]
+
+for node_url in nodes:
+    system = requests.get(f"{node_url}/api/v1/system").json()
+    top_models = requests.get(f"{node_url}/api/v1/models/top?limit=5&min_fit=good").json()
+    
+    # Forward to scheduler
+    payload = {
+        "node": system["node"],
+        "system": system["system"],
+        "top_models": top_models["models"]
+    }
+    print(json.dumps(payload, indent=2))
+```
+
+### 2. Conservative Placement Defaults
+
+For production placement, prefer:
+
+```
+min_fit=good
+include_too_tight=false
+sort=score
+limit=5..20
+```
+
+This ensures only models that fit with headroom are considered.
+
+### 3. Per-Workload Targeting
+
+**Coding workloads:**
+```bash
+curl "http://localhost:8787/api/v1/models/top?use_case=coding&limit=5"
+```
+
+**Embedding workloads:**
+```bash
+curl "http://localhost:8787/api/v1/models/top?use_case=embedding&limit=3"
+```
+
+**Runtime-constrained fleet (llama.cpp only):**
+```bash
+curl "http://localhost:8787/api/v1/models/top?runtime=llamacpp&limit=10"
+```
+
+### 4. Stable Parsing
+
+Treat unknown fields as forward-compatible additions:
+
+- Parse required fields you depend on
+- Ignore unknown fields
+- Validate enums against known values, fall back gracefully
+
+This ensures your client works with future API versions.
+
+## Curl Examples
+
+```bash
+# Health check
+curl http://127.0.0.1:8787/health
+
+# System info
+curl http://127.0.0.1:8787/api/v1/system
+
+# Top 20 models, sorted by score, minimum marginal fit
+curl "http://127.0.0.1:8787/api/v1/models?limit=20&min_fit=marginal&sort=score"
+
+# Top 5 runnable models for scheduling
+curl "http://127.0.0.1:8787/api/v1/models/top?limit=5&min_fit=good&use_case=coding"
+
+# Search for Mistral models
+curl "http://127.0.0.1:8787/api/v1/models/Mistral?runtime=any"
+
+# Pretty-print with jq
+curl -s "http://127.0.0.1:8787/api/v1/models/top?limit=3" | jq '.models[] | {name, score, fit_level}'
+```
+
+## Testing
+
+Validate API behavior with the included test script:
+
+```bash
+# Spawn server automatically and run assertions
+python3 scripts/test_api.py --spawn
+
+# Test an already-running server
+python3 scripts/test_api.py --base-url http://127.0.0.1:8787
+```
+
+The script validates:
+- Endpoint availability and response schemas
+- Filter behavior (min_fit, runtime, use_case)
+- Sort column correctness
+- Error handling
+
+## Versioning
+
+Current API prefix: `/api/v1/`
+
+If you build long-lived clients, pin to `/api/v1/...` and validate behavior with `scripts/test_api.py`.
+
+<Tip>
+  For cluster scheduling, use `/api/v1/models/top` with `min_fit=good` to ensure only models with headroom are considered for placement.
+</Tip>
+
+<Note>
+  The API returns the same scoring and fit analysis used by TUI and CLI modes. Results are computed on each request based on current system state.
+</Note>

@@ -1,0 +1,298 @@
+---
+title: info
+description: Show detailed information about a specific model
+---
+
+## Synopsis
+
+```bash
+llmfit info <MODEL>
+```
+
+## Description
+
+Displays comprehensive information about a specific model including specifications, hardware requirements, fit analysis, score breakdown, and download sources.
+
+If multiple models match the query, you'll be prompted to be more specific.
+
+## Arguments
+
+<ParamField path="model" type="string" required>
+  Model name or partial name to look up. Case-insensitive.
+</ParamField>
+
+## Options
+
+<ParamField path="--json" type="boolean" default="false">
+  Output model information as JSON instead of formatted text.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size for fit analysis (e.g., "32G", "32000M", "1.5T").
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (tokens). Must be >= 1.
+</ParamField>
+
+## Usage Examples
+
+### Basic Model Info
+
+```bash
+# Get details about Llama 3.3 70B
+llmfit info llama-3.3-70b
+
+# Partial name match
+llmfit info "llama 70b"
+```
+
+### JSON Output
+
+```bash
+# Get model info as JSON
+llmfit info llama-3.3-70b --json
+
+# Process with jq
+llmfit info deepseek-v3 --json | jq '.models[0].score_components'
+```
+
+### Test Different Configurations
+
+```bash
+# Check fit with 24GB VRAM
+llmfit info llama-3.1-70b --memory 24G
+
+# Check fit with 8K context limit
+llmfit info qwen-2.5-72b --max-context 8192
+```
+
+### Multiple Model Info
+
+```bash
+# Compare multiple models
+llmfit info llama-3.3-70b
+llmfit info qwen-2.5-72b
+llmfit info deepseek-v3
+```
+
+## Example Output
+
+### Detailed Info
+
+```
+=== llama-3.3-70b ===
+
+Provider: Meta
+Parameters: 70B
+Quantization: 4bit
+Best Quant: 4bit
+Context Length: 131072 tokens
+Use Case: general
+Category: General
+Released: 2024-12-06
+Runtime: MLX (baseline est. ~42.5 tok/s)
+
+Score Breakdown:
+  Overall Score: 95.2 / 100
+  Quality: 95  Speed: 43  Fit: 100  Context: 100
+  Baseline Est. Speed: 42.5 tok/s
+
+Resource Requirements:
+  Min VRAM: 36.4 GB
+  Min RAM: 43.7 GB (CPU inference)
+  Recommended RAM: 87.5 GB
+
+Fit Analysis:
+  Status: ✓ Perfect
+  Run Mode: GPU
+  Memory Utilization: 68.2% (43.7 / 64.0 GB)
+
+GGUF Downloads:
+  bartowski → https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF
+  Tip: llmfit download bartowski/Llama-3.3-70B-Instruct-GGUF --quant 4bit
+
+Notes:
+  High-quality general-purpose model from Meta
+  Excellent for chat, reasoning, and code generation
+  Requires significant VRAM for full GPU inference
+```
+
+### MoE Model Info
+
+```bash
+$ llmfit info deepseek-v3
+```
+
+```
+=== deepseek-v3 ===
+
+Provider: DeepSeek
+Parameters: 671B
+Quantization: Q4_K_M
+Best Quant: Q4_K_M
+Context Length: 131072 tokens
+Use Case: reasoning
+Category: Reasoning
+Released: 2024-12-26
+Runtime: llama.cpp (baseline est. ~28.3 tok/s)
+
+Score Breakdown:
+  Overall Score: 92.1 / 100
+  Quality: 98  Speed: 28  Fit: 89  Context: 100
+  Baseline Est. Speed: 28.3 tok/s
+
+Resource Requirements:
+  Min VRAM: 350.2 GB
+  Min RAM: 420.2 GB (CPU inference)
+  Recommended RAM: 840.5 GB
+
+MoE Architecture:
+  Experts: 8 active / 256 total per token
+  Active VRAM: 57.4 GB (vs 350.2 GB full model)
+  Offloaded: 292.8 GB inactive experts in RAM
+
+Fit Analysis:
+  Status: ✓ Good
+  Run Mode: MoE Offload
+  Memory Utilization: 89.7% (57.4 / 64.0 GB)
+
+GGUF Downloads:
+  unsloth → https://huggingface.co/unsloth/DeepSeek-V3-GGUF
+  Tip: llmfit download unsloth/DeepSeek-V3-GGUF --quant Q4_K_M
+
+Notes:
+  Advanced reasoning model with MoE architecture
+  Sparse activation allows running on modest hardware
+  GPU handles active experts, RAM holds inactive experts
+```
+
+### Multiple Matches
+
+```bash
+$ llmfit info llama
+```
+
+```
+Multiple models found. Please be more specific:
+  - llama-3.3-70b
+  - llama-3.1-405b
+  - llama-3.1-70b
+  - llama-3.1-8b
+  - llama-3.2-3b
+  - llama-3.2-1b
+  - llama-3.2-11b-vision
+  - llama-3.2-90b-vision
+```
+
+### No Match
+
+```bash
+$ llmfit info nonexistent
+```
+
+```
+No model found matching 'nonexistent'
+```
+
+### JSON Format
+
+```bash
+$ llmfit info llama-3.3-70b --json
+```
+
+```json
+{
+  "system": {
+    "total_ram_gb": 64.0,
+    "available_ram_gb": 58.24,
+    "cpu_cores": 16,
+    "gpu_vram_gb": 64.0,
+    "backend": "Metal"
+  },
+  "models": [
+    {
+      "name": "llama-3.3-70b",
+      "provider": "Meta",
+      "parameter_count": "70B",
+      "params_b": 70.0,
+      "context_length": 131072,
+      "use_case": "general",
+      "category": "General",
+      "release_date": "2024-12-06",
+      "is_moe": false,
+      "fit_level": "perfect",
+      "run_mode": "gpu",
+      "score": 95.2,
+      "score_components": {
+        "quality": 95.0,
+        "speed": 42.5,
+        "fit": 100.0,
+        "context": 100.0
+      },
+      "estimated_tps": 42.5,
+      "runtime": "MLX",
+      "runtime_label": "MLX",
+      "best_quant": "4bit",
+      "memory_required_gb": 43.68,
+      "memory_available_gb": 64.0,
+      "utilization_pct": 68.2,
+      "notes": [
+        "High-quality general-purpose model",
+        "Excellent for chat, reasoning, and code"
+      ],
+      "gguf_sources": [
+        {
+          "provider": "bartowski",
+          "repo": "bartowski/Llama-3.3-70B-Instruct-GGUF"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Information Sections
+
+### Model Specs
+
+- Provider, parameter count, quantization
+- Context window size
+- Use case and category
+- Release date
+
+### Score Breakdown
+
+- Overall composite score (0-100)
+- Individual components: quality, speed, fit, context
+- Estimated tokens/second throughput
+
+### Resource Requirements
+
+- Minimum VRAM for GPU inference
+- Minimum RAM for CPU inference
+- Recommended RAM for comfortable operation
+
+### MoE Details (if applicable)
+
+- Expert configuration (active/total)
+- Active VRAM usage
+- Offloaded expert size
+
+### Fit Analysis
+
+- Fit level (Perfect, Good, Marginal, Too Tight)
+- Run mode (GPU, MoE Offload, CPU Offload, CPU Only)
+- Memory utilization percentage
+
+### Download Sources
+
+- HuggingFace GGUF repositories
+- Download command examples
+
+## Related Commands
+
+- [search](/api/commands/search) - Find models by name
+- [fit](/api/commands/fit) - Show compatible models
+- [plan](/api/commands/plan) - Plan hardware requirements
+- [recommend](/api/commands/recommend) - Get top recommendations

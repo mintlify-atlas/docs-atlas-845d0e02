@@ -1,0 +1,673 @@
+---
+title: CLI Mode
+description: Classic command-line interface with table output and JSON support
+---
+
+The CLI mode provides non-interactive table output and JSON-formatted results for scripting and automation. Use subcommands for specific tasks or the `--cli` flag to get a fit table instead of the TUI.
+
+## CLI vs TUI
+
+```bash
+# Launch TUI (default)
+llmfit
+
+# Use CLI table output
+llmfit --cli
+
+# Use a subcommand (always CLI mode)
+llmfit fit --perfect -n 5
+```
+
+Any subcommand automatically uses CLI mode. The `--cli` flag forces CLI mode when no subcommand is given.
+
+## Global Flags
+
+These flags work with all subcommands:
+
+<ParamField path="--json" type="boolean">
+  Output results as JSON instead of formatted tables. Useful for parsing with `jq`, scripts, or agents.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size. Accepts suffixes: `G`/`GB`/`GiB`, `M`/`MB`/`MiB`, `T`/`TB`/`TiB` (case-insensitive).
+  
+  Examples: `--memory 32G`, `--memory 24000M`, `--memory 1.5T`
+  
+  Useful when GPU autodetection fails (VMs, passthrough, broken nvidia-smi).
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (in tokens). Does not change the model's advertised max context.
+  
+  Example: `--max-context 8192`
+  
+  Falls back to `OLLAMA_CONTEXT_LENGTH` environment variable if not set.
+</ParamField>
+
+## Subcommands
+
+### `system`
+
+Show detected hardware specifications.
+
+```bash
+llmfit system
+```
+
+**Output:**
+```
+CPU: Intel(R) Core(TM) Ultra 7 165U (14 cores)
+RAM: 41.1 GB available / 62.2 GB total
+GPU: NVIDIA RTX 4090 (24.0 GB, CUDA)
+```
+
+**JSON output:**
+```bash
+llmfit --json system
+```
+
+```json
+{
+  "total_ram_gb": 62.23,
+  "available_ram_gb": 41.08,
+  "cpu_cores": 14,
+  "cpu_name": "Intel(R) Core(TM) Ultra 7 165U",
+  "has_gpu": true,
+  "gpu_vram_gb": 24.0,
+  "gpu_name": "NVIDIA RTX 4090",
+  "gpu_count": 1,
+  "unified_memory": false,
+  "backend": "CUDA"
+}
+```
+
+<ParamField path="--memory" type="string">
+  Override detected GPU VRAM:
+  
+  ```bash
+  llmfit --memory 32G system
+  ```
+</ParamField>
+
+---
+
+### `list`
+
+List all models in the database (no fit analysis).
+
+```bash
+llmfit list
+```
+
+**Output:** Table with columns: Name, Provider, Params, Quant, Context, Use Case, Released
+
+---
+
+### `fit`
+
+Find models that fit your system with ranked table output.
+
+```bash
+# All models, ranked by composite score
+llmfit fit
+
+# Only perfect fits
+llmfit fit --perfect
+
+# Top 5 models
+llmfit fit -n 5
+
+# Sort by parameter count, limit to 10
+llmfit fit --sort params -n 10
+
+# Sort by memory utilization
+llmfit fit --sort mem
+
+# Sort by context length
+llmfit fit --sort ctx
+
+# Sort by release date (newest first)
+llmfit fit --sort date
+```
+
+**Flags:**
+
+<ParamField path="--perfect" type="boolean">
+  Show only models that perfectly match recommended specs (GPU required, meets recommended VRAM/RAM).
+</ParamField>
+
+<ParamField path="-n, --limit" type="integer">
+  Limit number of results returned.
+</ParamField>
+
+<ParamField path="--sort" type="enum">
+  Sort column for fit output.
+  
+  **Values:** `score` (default), `tps`, `params`, `mem`, `ctx`, `date`, `use`
+  
+  **Aliases:**
+  - `tps`: `tokens`, `toks`, `throughput`
+  - `mem`: `memory`, `mem_pct`, `utilization`
+  - `ctx`: `context`
+  - `date`: `release`, `released`
+  - `use`: `use_case`, `usecase`
+</ParamField>
+
+**Output columns:**
+- **Fit**: Indicator (`●`) colored by fit level
+- **Model**: Model name
+- **Provider**: Model provider
+- **Params**: Parameter count
+- **Score**: Composite score (0-100)
+- **tok/s**: Estimated tokens/second
+- **Quant**: Best quantization for your hardware
+- **Mode**: Run mode (GPU, MoE, CPU+GPU, CPU)
+- **Mem %**: Memory utilization percentage
+- **Ctx**: Context window (in thousands of tokens)
+- **Fit Level**: Perfect, Good, Marginal, Too Tight
+
+**JSON output:**
+```bash
+llmfit --json fit -n 5
+```
+
+Returns array of model fit objects with full metadata, scoring breakdown, memory requirements, and runtime info.
+
+---
+
+### `search`
+
+Search for models by name, provider, or size (fuzzy match).
+
+```bash
+llmfit search "llama 8b"
+llmfit search "mistral"
+llmfit search "qwen coding"
+```
+
+**Output:** Table of matching models with basic metadata (no fit analysis).
+
+---
+
+### `info`
+
+Show detailed information about a specific model.
+
+```bash
+llmfit info "Llama-3.1-8B"
+llmfit info "Mistral-7B-Instruct"
+```
+
+If multiple models match, you'll be prompted to be more specific.
+
+**Output:**
+- Full model metadata
+- Score breakdown (Quality, Speed, Fit, Context)
+- Estimated tokens/second
+- Memory requirements (min/recommended VRAM/RAM)
+- Fit level and run mode for your system
+- MoE architecture details (if applicable)
+- GGUF download sources
+
+**JSON output:**
+```bash
+llmfit --json info "Llama-3.1-8B"
+```
+
+Returns single-element array with full model fit object.
+
+---
+
+### `plan`
+
+Estimate required hardware for a specific model configuration. Inverts normal fit analysis: instead of "what fits my hardware?", asks "what hardware is needed for this model config?"
+
+```bash
+# Basic plan with context length
+llmfit plan "Qwen/Qwen3-4B-MLX-4bit" --context 8192
+
+# Override quantization
+llmfit plan "Llama-3.1-70B" --context 16384 --quant Q4_K_M
+
+# Target specific throughput
+llmfit plan "Mistral-7B" --context 8192 --target-tps 25
+
+# JSON output for scripting
+llmfit plan "Qwen/Qwen3-4B-MLX-4bit" --context 8192 --json
+```
+
+**Flags:**
+
+<ParamField path="model" type="string" required>
+  Model selector (name or unique partial name). Resolves to a single model from the database.
+</ParamField>
+
+<ParamField path="--context" type="integer" required>
+  Context length for estimation in tokens (e.g., 4096, 8192, 32768).
+</ParamField>
+
+<ParamField path="--quant" type="string">
+  Quantization override (e.g., Q4_K_M, Q8_0, mlx-4bit). Omit for auto-selection based on context.
+</ParamField>
+
+<ParamField path="--target-tps" type="number">
+  Target decode speed in tokens/second. Used to recommend GPU memory bandwidth.
+</ParamField>
+
+**Output:**
+
+**Human-readable:**
+- Model name and configuration
+- Minimum hardware (VRAM, RAM, CPU cores)
+- Recommended hardware
+- Feasibility of GPU, CPU+GPU offload, CPU-only paths with estimated TPS and fit level
+- Upgrade deltas to reach better fit targets
+
+**JSON:**
+```json
+{
+  "model": "Qwen/Qwen3-4B-MLX-4bit",
+  "request": {
+    "context": 8192,
+    "quantization": "mlx-4bit",
+    "target_tps": null
+  },
+  "minimum": {
+    "vram_gb": 3.2,
+    "ram_gb": 4.5,
+    "cpu_cores": 4
+  },
+  "recommended": {
+    "vram_gb": 6.4,
+    "ram_gb": 9.0,
+    "cpu_cores": 8
+  },
+  "run_paths": [
+    {
+      "path": "gpu",
+      "feasible": true,
+      "estimated_tps": 42.3,
+      "fit_level": "good"
+    },
+    {
+      "path": "cpu_offload",
+      "feasible": true,
+      "estimated_tps": 21.1,
+      "fit_level": "marginal"
+    },
+    {
+      "path": "cpu_only",
+      "feasible": true,
+      "estimated_tps": 12.7,
+      "fit_level": "marginal"
+    }
+  ],
+  "upgrade_deltas": []
+}
+```
+
+---
+
+### `recommend`
+
+Get top model recommendations for your hardware (JSON-friendly).
+
+```bash
+# Top 5 recommendations (default)
+llmfit recommend
+
+# Top 10
+llmfit recommend --limit 10
+
+# Filter by use case
+llmfit recommend --use-case coding --limit 3
+llmfit recommend --use-case reasoning --limit 5
+
+# Minimum fit level
+llmfit recommend --min-fit good --limit 5
+llmfit recommend --min-fit perfect --limit 3
+
+# Filter by runtime
+llmfit recommend --runtime mlx --limit 5
+llmfit recommend --runtime llamacpp --limit 5
+
+# JSON output (default for recommend)
+llmfit recommend --json --limit 5
+```
+
+**Flags:**
+
+<ParamField path="--limit, -n" type="integer" default="5">
+  Maximum number of recommendations to return.
+</ParamField>
+
+<ParamField path="--use-case" type="enum">
+  Filter by use case category.
+  
+  **Values:** `general`, `coding`, `reasoning`, `chat`, `multimodal`, `embedding`
+</ParamField>
+
+<ParamField path="--min-fit" type="enum" default="marginal">
+  Minimum fit level to include.
+  
+  **Values:** `perfect`, `good`, `marginal`
+</ParamField>
+
+<ParamField path="--runtime" type="enum" default="any">
+  Filter by inference runtime.
+  
+  **Values:** `any`, `mlx`, `llamacpp`
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="true">
+  Output as JSON (default for recommend command).
+</ParamField>
+
+**Output:**
+
+JSON array of model fit objects ranked by composite score, filtered by specified criteria. Perfect for agent/script consumption.
+
+---
+
+### `download`
+
+Download a GGUF model from HuggingFace for use with llama.cpp.
+
+```bash
+# Download by HuggingFace repo
+llmfit download "bartowski/Llama-3.1-8B-Instruct-GGUF"
+
+# Auto-select quantization based on hardware
+llmfit download "llama 8b"
+
+# Specify quantization
+llmfit download "llama 8b" --quant Q4_K_M
+
+# Set memory budget for auto-selection
+llmfit download "mistral 7b" --budget 12
+
+# List available files without downloading
+llmfit download "bartowski/Mistral-7B-Instruct-GGUF" --list
+```
+
+**Flags:**
+
+<ParamField path="model" type="string" required>
+  Model to download. Can be:
+  - HuggingFace repo (e.g., `bartowski/Llama-3.1-8B-Instruct-GGUF`)
+  - Search query (e.g., `llama 8b`)
+  - Known model name (e.g., `llama-3.1-8b-instruct`)
+</ParamField>
+
+<ParamField path="--quant, -q" type="string">
+  Specific GGUF quantization to download (e.g., Q4_K_M, Q8_0). If omitted, selects the best quantization that fits your hardware.
+</ParamField>
+
+<ParamField path="--budget" type="number">
+  Maximum memory budget in GB for auto-selection. Defaults to detected GPU VRAM or available RAM.
+</ParamField>
+
+<ParamField path="--list" type="boolean">
+  List available GGUF files in the repo without downloading.
+</ParamField>
+
+**Output:**
+
+Progress bar with download status, final file path, and run instructions.
+
+---
+
+### `hf-search`
+
+Search HuggingFace for GGUF models compatible with llama.cpp.
+
+```bash
+llmfit hf-search "llama"
+llmfit hf-search "mistral" --limit 20
+```
+
+**Flags:**
+
+<ParamField path="query" type="string" required>
+  Search query (model name, architecture, etc.)
+</ParamField>
+
+<ParamField path="--limit, -n" type="integer" default="10">
+  Maximum number of results to return.
+</ParamField>
+
+**Output:**
+
+Table of HuggingFace repositories with GGUF files, including repo ID and model type.
+
+---
+
+### `run`
+
+Run a downloaded GGUF model with llama-cli or llama-server.
+
+```bash
+# Interactive chat
+llmfit run "llama-3.1-8b"
+
+# Start as OpenAI-compatible API server
+llmfit run "mistral-7b" --server --port 8080
+
+# Custom context size and GPU layers
+llmfit run "llama-3.1-8b" --ctx-size 8192 --ngl 35
+```
+
+**Flags:**
+
+<ParamField path="model" type="string" required>
+  Model file or name. If a name is given, searches the local llama.cpp cache directory.
+</ParamField>
+
+<ParamField path="--server" type="boolean">
+  Run as an OpenAI-compatible API server instead of interactive chat.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8080">
+  Port for the API server (only with `--server`).
+</ParamField>
+
+<ParamField path="--ngl, -g" type="integer" default="-1">
+  Number of GPU layers to offload. `-1` means all layers (full GPU).
+</ParamField>
+
+<ParamField path="--ctx-size, -c" type="integer" default="4096">
+  Context size in tokens.
+</ParamField>
+
+**Output:**
+
+Launches llama-cli (interactive) or llama-server (API mode) with the specified model and configuration.
+
+---
+
+### `serve`
+
+Start llmfit REST API server for cluster/node scheduling workflows. See [REST API Guide](/guides/rest-api) for full endpoint documentation.
+
+```bash
+# Start on default port (8787)
+llmfit serve
+
+# Bind to specific host and port
+llmfit serve --host 0.0.0.0 --port 8787
+
+# With global flags
+llmfit --memory 24G --max-context 8192 serve --host 0.0.0.0 --port 8787
+```
+
+**Flags:**
+
+<ParamField path="--host" type="string" default="0.0.0.0">
+  Host interface to bind.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8787">
+  Port to listen on.
+</ParamField>
+
+**Output:**
+
+HTTP server running on specified host/port. Access endpoints:
+- `GET /health` - Liveness probe
+- `GET /api/v1/system` - Node hardware info
+- `GET /api/v1/models` - Full fit list with filters
+- `GET /api/v1/models/top` - Top runnable models for scheduling
+
+See [REST API Guide](/guides/rest-api) for query parameters and response schemas.
+
+---
+
+## Examples
+
+### Find top 5 perfectly fitting models
+
+```bash
+llmfit fit --perfect -n 5
+```
+
+### Get JSON recommendations for coding
+
+```bash
+llmfit recommend --json --use-case coding --limit 3 | jq '.models[].name'
+```
+
+### Search and get info
+
+```bash
+llmfit search "mistral" | grep 7B
+llmfit info "Mistral-7B-Instruct-v0.3"
+```
+
+### Override GPU memory and cap context
+
+```bash
+llmfit --memory 32G --max-context 16384 fit --perfect
+```
+
+### Plan hardware for a workload
+
+```bash
+llmfit plan "DeepSeek-R1-Distill-Llama-70B" --context 32768 --quant Q4_K_M --json
+```
+
+### Download and run a model
+
+```bash
+llmfit download "llama 8b" --quant Q4_K_M
+llmfit run "llama-3.1-8b"
+```
+
+## JSON Schema Reference
+
+All `--json` output follows consistent schemas:
+
+**System (`llmfit --json system`):**
+```typescript
+{
+  total_ram_gb: number,
+  available_ram_gb: number,
+  cpu_cores: number,
+  cpu_name: string,
+  has_gpu: boolean,
+  gpu_vram_gb: number | null,
+  gpu_name: string | null,
+  gpu_count: number,
+  unified_memory: boolean,
+  backend: string,
+  gpus: Array<{
+    name: string,
+    vram_gb: number | null,
+    count: number,
+    unified_memory: boolean,
+    backend: string
+  }>
+}
+```
+
+**Model Fit (`llmfit --json fit`, `recommend`, `info`):**
+```typescript
+{
+  models: Array<{
+    name: string,
+    provider: string,
+    parameter_count: string,
+    params_b: number,
+    context_length: number,
+    use_case: string,
+    category: string,
+    release_date: string | null,
+    is_moe: boolean,
+    fit_level: "perfect" | "good" | "marginal" | "too_tight",
+    fit_label: string,
+    run_mode: "gpu" | "moe" | "cpu_offload" | "cpu_only",
+    run_mode_label: string,
+    score: number,
+    score_components: {
+      quality: number,
+      speed: number,
+      fit: number,
+      context: number
+    },
+    estimated_tps: number,
+    runtime: "mlx" | "llamacpp",
+    runtime_label: string,
+    best_quant: string,
+    memory_required_gb: number,
+    memory_available_gb: number,
+    utilization_pct: number,
+    notes: string[],
+    gguf_sources: Array<{
+      provider: string,
+      repo: string
+    }>
+  }>
+}
+```
+
+**Plan (`llmfit --json plan`):**
+```typescript
+{
+  model: string,
+  request: {
+    context: number,
+    quantization: string | null,
+    target_tps: number | null
+  },
+  minimum: {
+    vram_gb: number | null,
+    ram_gb: number,
+    cpu_cores: number
+  },
+  recommended: {
+    vram_gb: number | null,
+    ram_gb: number,
+    cpu_cores: number
+  },
+  run_paths: Array<{
+    path: "gpu" | "cpu_offload" | "cpu_only",
+    feasible: boolean,
+    estimated_tps: number | null,
+    fit_level: "perfect" | "good" | "marginal" | "too_tight" | null
+  }>,
+  upgrade_deltas: Array<{
+    description: string
+  }>
+}
+```
+
+<Tip>
+  Pipe JSON output to `jq` for filtering and formatting:
+  
+  ```bash
+  llmfit --json fit -n 5 | jq '.models[] | {name, score, fit_level}'
+  ```
+</Tip>
+
+<Note>
+  The `--json` flag is global and works with `system`, `fit`, `info`, `plan`, and `recommend` subcommands.
+</Note>

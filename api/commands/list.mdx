@@ -1,0 +1,107 @@
+---
+title: list
+description: List all available LLM models
+---
+
+## Synopsis
+
+```bash
+llmfit list
+```
+
+## Description
+
+Displays all LLM models in the llmfit database without filtering by system compatibility. This shows the complete catalog of models that llmfit knows about.
+
+The list includes models from various providers (Meta, Anthropic, OpenAI, Google, Alibaba, etc.) with their parameter counts, quantizations, and context windows.
+
+## Options
+
+This command has no options.
+
+## Usage Examples
+
+### List All Models
+
+```bash
+# Display complete model catalog
+llmfit list
+```
+
+### Count Models
+
+```bash
+# Count total models in database
+llmfit list | grep -c "│"
+```
+
+### Filter by Provider
+
+```bash
+# Find all Meta models
+llmfit list | grep Meta
+
+# Find all Anthropic models
+llmfit list | grep Anthropic
+```
+
+## Example Output
+
+```
+=== Available LLM Models ===
+Total models: 159
+
+╭─────────┬──────────────────────────┬───────────┬──────┬────────┬──────────────┬──────────┬────────────┬─────────┬────────┬─────────╮
+│ Status  │ Model                    │ Provider  │ Size │ Score  │ tok/s est.   │ Quant    │ Runtime    │ Mode    │ Mem %  │ Context │
+├─────────┼──────────────────────────┼───────────┼──────┼────────┼──────────────┼──────────┼────────────┼─────────┼────────┼─────────┤
+│ --      │ llama-3.3-70b           │ Meta      │ 70B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.1-405b          │ Meta      │ 405B │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ qwen-2.5-72b            │ Alibaba   │ 72B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 32k     │
+│ --      │ deepseek-v3             │ DeepSeek  │ 671B │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ claude-3.5-sonnet       │ Anthropic │ -    │ -      │ -            │ -        │ -          │ -       │ -      │ 200k    │
+│ --      │ gpt-4o                  │ OpenAI    │ -    │ -      │ -            │ -        │ -          │ -       │ -      │ 128k    │
+│ --      │ gemini-2.0-flash        │ Google    │ -    │ -      │ -            │ -        │ -          │ -       │ -      │ 1000k   │
+│ --      │ mistral-large-2         │ Mistral   │ 123B │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ phi-4                   │ Microsoft │ 14B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 16k     │
+│ --      │ codestral-25.01         │ Mistral   │ 22B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 256k    │
+╰─────────┴──────────────────────────┴───────────┴──────┴────────┴──────────────┴──────────┴────────────┴─────────┴────────┴─────────╯
+```
+
+## Model Database
+
+The model database is:
+
+- **Embedded**: Compiled into the binary from `data/hf_models.json`
+- **No network**: All data is local, no API calls required
+- **Updated**: Regenerate via `python3 scripts/scrape_hf_models.py`
+
+### Model Fields
+
+- **Name**: Model identifier
+- **Provider**: Company/organization (Meta, Anthropic, etc.)
+- **Size**: Parameter count (e.g., 7B, 70B, 405B)
+- **Quant**: Quantization format (4bit, Q4_K_M, Q8_0, etc.)
+- **Context**: Context window in tokens (k = thousands)
+
+### Model Types
+
+- **Local models**: Have parameter counts and can run locally (llama.cpp, MLX)
+- **API-only models**: Claude, GPT-4, Gemini (no local inference)
+- **Quantized**: GGUF models for llama.cpp
+- **MLX models**: 4bit quantized for Apple Silicon
+
+## Comparison with Other Commands
+
+| Command | Purpose | Filtering |
+|---------|---------|----------|
+| `list` | Show all models | None |
+| `fit` | Show compatible models | By system specs |
+| `search` | Find specific models | By search query |
+| `recommend` | Get top recommendations | By fit quality + filters |
+
+## Related Commands
+
+- [search](/api/commands/search) - Search for specific models
+- [fit](/api/commands/fit) - Find compatible models
+- [info](/api/commands/info) - Get detailed model information
+- [recommend](/api/commands/recommend) - Get top recommendations

@@ -1,0 +1,327 @@
+---
+title: macOS Platform Support
+description: Apple Silicon unified memory, Metal backend, and installation for macOS
+---
+
+macOS has full support for Apple Silicon unified memory and discrete GPU detection on Intel Macs.
+
+## Apple Silicon Unified Memory
+
+All Apple Silicon Macs (M1, M2, M3, M4 series) use unified memory where GPU and CPU share the same RAM pool.
+
+### Detection Method
+
+llmfit uses `system_profiler` to detect Apple Silicon GPUs:
+
+```bash
+system_profiler SPDisplaysDataType
+```
+
+**Detection criteria:**
+
+- Searches for "Apple M" or "Apple GPU" in chipset line
+- Example output:
+  ```
+  Chipset Model: Apple M4 Max
+  Type: GPU
+  ```
+
+### Unified Memory Behavior
+
+**VRAM = Total System RAM:**
+
+- 16 GB Mac → 16 GB VRAM
+- 32 GB Mac → 32 GB VRAM
+- 128 GB Mac → 128 GB VRAM
+
+**No CPU Offload Path:**
+
+- GPU and CPU share the same memory pool
+- Run mode is always `GPU` (unified) or `CPU` (no separate offload)
+- `unified_memory` flag set to `true`
+
+### Metal Backend
+
+All Apple Silicon GPUs use Metal for GPU acceleration:
+
+```bash
+llmfit system
+# GPU: Apple M4 Max (unified memory, 128.00 GB shared, Metal)
+```
+
+**Memory Bandwidth:**
+
+llmfit uses actual unified memory bandwidth for speed estimation:
+
+| Chip | Bandwidth (GB/s) |
+|------|------------------|
+| M1 | 68 |
+| M1 Pro | 200 |
+| M1 Max | 400 |
+| M1 Ultra | 800 |
+| M2 | 100 |
+| M2 Pro | 200 |
+| M2 Max | 400 |
+| M2 Ultra | 800 |
+| M3 | 100 |
+| M3 Pro | 150 |
+| M3 Max | 400 |
+| M3 Ultra | 800 |
+| M4 | 120 |
+| M4 Pro | 273 |
+| M4 Max | 546 |
+| M4 Ultra | 819 |
+
+Source: hardware.rs:1584-1632
+
+### Available RAM Detection
+
+Recent macOS versions (Sequoia, Tahoe) sometimes report 0 for available memory via sysinfo. llmfit has fallbacks:
+
+#### 1. Total - Used
+
+```rust
+let used = sys.used_memory();
+let available = total_bytes - used;
+```
+
+#### 2. vm_stat Parsing
+
+```bash
+vm_stat
+# Mach Virtual Memory Statistics: (page size of 16384 bytes)
+# Pages free:                               123456.
+# Pages inactive:                           234567.
+# Pages purgeable:                           12345.
+```
+
+**Calculation:**
+
+```rust
+let available_bytes = (free + inactive + purgeable) * page_size;
+```
+
+- Apple Silicon default page size: 16 KB (16384 bytes)
+- Intel Macs: 4 KB (4096 bytes)
+
+#### 3. Conservative Fallback
+
+If both fail, assume 80% of total RAM is available:
+
+```rust
+total_ram_gb * 0.8
+```
+
+## Intel Mac Support
+
+Intel Macs have discrete GPUs (AMD or NVIDIA) and do not use unified memory.
+
+### NVIDIA GPUs (Older Intel Macs)
+
+Some Intel Macs have discrete NVIDIA GPUs:
+
+```bash
+# Check if nvidia-smi is available
+nvidia-smi
+```
+
+If nvidia-smi works, llmfit detects VRAM and uses CUDA backend.
+
+**Note:** NVIDIA stopped official macOS support after macOS 10.13 (High Sierra). Most Intel Macs with discrete GPUs have AMD cards.
+
+### AMD GPUs (Intel Macs)
+
+Intel MacBook Pro / iMac Pro with AMD Radeon GPUs:
+
+- Detection: `system_profiler SPDisplaysDataType`
+- VRAM: Not reported by system_profiler (shows "Metal: Supported")
+- llmfit falls back to CPU detection (no GPU reported)
+
+**Workaround:**
+
+Use manual override:
+
+```bash
+# 16-inch MacBook Pro with Radeon Pro 5500M (8GB)
+llmfit --memory=8G system
+```
+
+## Installation Methods
+
+### Homebrew (Recommended)
+
+```bash
+brew install llmfit
+```
+
+### Quick Install Script
+
+```bash
+# Install to /usr/local/bin (requires sudo)
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+
+# Install to ~/.local/bin (no sudo)
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+```
+
+### From Source
+
+```bash
+git clone https://github.com/AlexsJones/llmfit.git
+cd llmfit
+cargo build --release
+cp target/release/llmfit /usr/local/bin/
+```
+
+## Runtime Providers
+
+llmfit integrates with local runtime providers for downloading and running models on macOS:
+
+### Ollama
+
+Install Ollama:
+
+```bash
+brew install ollama
+
+# Start Ollama service
+ollama serve
+```
+
+llmfit auto-detects Ollama at `http://localhost:11434`:
+
+```bash
+llmfit
+# System bar shows: Ollama: ✓ (N installed)
+```
+
+### llama.cpp
+
+Install llama.cpp:
+
+```bash
+brew install llama.cpp
+
+# Verify installation
+which llama-cli
+which llama-server
+```
+
+llmfit detects llama.cpp runtime and uses local GGUF cache.
+
+### MLX (Apple Silicon Only)
+
+MLX is optimized for Apple Silicon unified memory:
+
+```bash
+pip install mlx
+pip install mlx-lm
+```
+
+llmfit detects MLX models in `~/.cache/huggingface/hub/`.
+
+## Troubleshooting
+
+### GPU Not Detected (Apple Silicon)
+
+1. Check system_profiler:
+   ```bash
+   system_profiler SPDisplaysDataType | grep -i "chipset\|apple"
+   ```
+
+2. Expected output:
+   ```
+   Chipset Model: Apple M4 Max
+   ```
+
+3. If not detected, llmfit falls back to CPU detection (still works, but no GPU indication)
+
+### Available RAM Shows 0
+
+This is a known issue on macOS Sequoia and newer:
+
+```bash
+# Check vm_stat
+vm_stat
+```
+
+llmfit should automatically fall back to vm_stat parsing. If it shows unrealistic values, file a bug report.
+
+### Intel Mac Discrete GPU Not Detected
+
+Intel Macs with AMD Radeon GPUs are not auto-detected. Use manual override:
+
+```bash
+# Check GPU via system_profiler
+system_profiler SPDisplaysDataType
+# Chipset Model: AMD Radeon Pro 5500M
+# VRAM (Dynamic, Max): 8 GB
+
+llmfit --memory=8G system
+```
+
+### OLLAMA_HOST Connection Issues
+
+If Ollama is running but llmfit doesn't detect it:
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# If using custom port
+export OLLAMA_HOST="http://localhost:11434"
+llmfit
+```
+
+### MLX Not Detected
+
+1. Check if MLX is installed:
+   ```bash
+   python3 -c "import mlx; print(mlx.__version__)"
+   ```
+
+2. Check MLX cache:
+   ```bash
+   ls ~/.cache/huggingface/hub/ | grep mlx
+   ```
+
+3. Install MLX if missing:
+   ```bash
+   pip install mlx mlx-lm
+   ```
+
+### Performance Issues
+
+**Unified Memory Pressure:**
+
+Apple Silicon shares memory between GPU and CPU. Check memory pressure:
+
+```bash
+# Activity Monitor > Memory tab
+# Watch for "Memory Pressure" indicator
+```
+
+If memory pressure is high:
+
+- Close unused apps
+- Use smaller models or lower context lengths
+- Use `--max-context` to cap memory estimation:
+  ```bash
+  llmfit --max-context 4096
+  ```
+
+**Swap Usage:**
+
+Apple Silicon Macs use swap aggressively. Check swap usage:
+
+```bash
+sysctl vm.swapusage
+```
+
+High swap usage degrades performance. Consider models that fit in ~70-80% of physical RAM.
+
+## Next Steps
+
+- [Platform Overview](/platforms/overview)
+- [Linux Platform Guide](/platforms/linux)
+- [Windows Platform Guide](/platforms/windows)

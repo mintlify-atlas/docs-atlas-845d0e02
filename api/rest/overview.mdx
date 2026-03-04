@@ -1,0 +1,119 @@
+---
+title: 'REST API Overview'
+description: 'Node-level fit API for cluster scheduling and integration'
+---
+
+## Purpose
+
+The `llmfit serve` mode exposes node-local model fit analysis over HTTP. It provides the same core data used by the TUI and CLI, optimized for programmatic access by schedulers, controllers, and cluster management systems.
+
+**Primary use case:**
+- Query each node in a cluster for its top runnable models
+- Aggregate results externally for intelligent placement decisions
+- Enable dynamic model routing based on hardware capabilities
+
+## Starting the Server
+
+Start the API server using the `serve` subcommand:
+
+```bash
+llmfit serve --host 0.0.0.0 --port 8787
+```
+
+Global flags apply before the `serve` subcommand:
+
+```bash
+llmfit --memory 24G --max-context 8192 serve --host 0.0.0.0 --port 8787
+```
+
+The server will print available endpoints on startup:
+
+```
+llmfit API server listening on http://0.0.0.0:8787
+  GET /health
+  GET /api/v1/system
+  GET /api/v1/models?limit=20&min_fit=marginal&sort=score
+  GET /api/v1/models/top?limit=5&use_case=coding&min_fit=good
+  GET /api/v1/models/<name>
+```
+
+## Base URL
+
+Default local base URL:
+
+```
+http://127.0.0.1:8787
+```
+
+For cluster deployments, bind to `0.0.0.0` and access via node IP or hostname.
+
+## API Versioning
+
+The current API version is `v1`, with endpoints prefixed by `/api/v1/`.
+
+For long-lived client integrations:
+- Pin to `/api/v1/` endpoints
+- Treat unknown response fields as forward-compatible additions
+- Parse only the fields your application requires
+
+## Authentication
+
+Currently **no authentication** is required. The API is designed for trusted internal cluster networks.
+
+For production deployments:
+- Use network-level access controls (firewall rules, VPC policies)
+- Consider placing behind a reverse proxy with authentication if exposed beyond trusted networks
+
+## Response Format
+
+All endpoints return JSON. Successful responses use HTTP 200 status codes. Error responses include an `error` field:
+
+```json
+{
+  "error": "invalid min_fit value: use perfect|good|marginal|too_tight"
+}
+```
+
+## Common Response Envelope
+
+Most model-listing endpoints (`/api/v1/models`, `/api/v1/models/top`, `/api/v1/models/{name}`) return a common envelope structure:
+
+```json
+{
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  },
+  "system": { /* hardware details */ },
+  "total_models": 23,
+  "returned_models": 10,
+  "filters": { /* query parameters echoed */ },
+  "models": [ /* array of model fit objects */ ]
+}
+```
+
+This envelope provides:
+- **Node identity** for multi-node aggregation
+- **System specs** for validation and display
+- **Counts** for pagination awareness
+- **Active filters** for audit trails
+- **Models array** with detailed fit analysis
+
+## Quick Start Example
+
+```bash
+# Check server health
+curl http://127.0.0.1:8787/health
+
+# Get hardware specs
+curl http://127.0.0.1:8787/api/v1/system
+
+# Get top 5 runnable models
+curl "http://127.0.0.1:8787/api/v1/models/top?limit=5&min_fit=good"
+```
+
+## Next Steps
+
+- See [Endpoints](/api/rest/endpoints) for detailed endpoint documentation
+- See [Query Parameters](/api/rest/query-parameters) for filtering options
+- See [Response Schemas](/api/rest/response-schemas) for field definitions

@@ -1,0 +1,207 @@
+---
+title: Overview
+description: Introduction to llmfit-core - the Rust library powering llmfit
+---
+
+# llmfit-core API Overview
+
+`llmfit-core` is the Rust library that powers the `llmfit` CLI tool. It provides programmatic access to hardware detection, model database queries, fit analysis, and model provider integration.
+
+## Installation
+
+Add `llmfit-core` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+llmfit-core = "0.1"
+```
+
+## Core Modules
+
+The library is organized into five main modules:
+
+### `hardware`
+
+Detects system specifications including CPU, RAM, and GPU hardware:
+
+```rust
+use llmfit_core::SystemSpecs;
+
+let specs = SystemSpecs::detect();
+println!("Total RAM: {:.2} GB", specs.total_ram_gb);
+println!("GPU: {:?}", specs.gpu_name);
+```
+
+See [Hardware API](/api/library/hardware) for details.
+
+### `models`
+
+Provides access to the embedded model database:
+
+```rust
+use llmfit_core::ModelDatabase;
+
+let db = ModelDatabase::new();
+let all_models = db.get_all_models();
+let llama_models = db.find_model("llama");
+```
+
+See [Models API](/api/library/models) for details.
+
+### `fit`
+
+Analyzes how well models fit on specific hardware:
+
+```rust
+use llmfit_core::{ModelFit, SystemSpecs, ModelDatabase};
+
+let specs = SystemSpecs::detect();
+let db = ModelDatabase::new();
+
+for model in db.get_all_models() {
+    let fit = ModelFit::analyze(model, &specs);
+    println!("{}: {} ({})", 
+        model.name, 
+        fit.fit_text(), 
+        fit.run_mode_text()
+    );
+}
+```
+
+See [Fit API](/api/library/fit) for details.
+
+### `providers`
+
+Integrates with runtime providers (Ollama, llama.cpp, MLX):
+
+```rust
+use llmfit_core::{OllamaProvider, ModelProvider};
+
+let provider = OllamaProvider::new();
+if provider.is_available() {
+    let installed = provider.installed_models();
+    println!("Installed models: {:?}", installed);
+}
+```
+
+See [Providers API](/api/library/providers) for details.
+
+### `plan`
+
+Plan-based model selection and upgrade recommendations:
+
+```rust
+use llmfit_core::{estimate_model_plan, PlanRequest, SystemSpecs};
+
+let specs = SystemSpecs::detect();
+let request = PlanRequest {
+    model_name: Some("llama-3.1-8b-instruct".to_string()),
+    use_case: None,
+    target_gpu_memory_gb: None,
+    prefer_newest: false,
+    provider_preference: None,
+};
+
+let plan = estimate_model_plan(&request, &specs);
+if let Some(estimate) = plan.current {
+    println!("Current path: {}", estimate.path.provider);
+}
+```
+
+## Basic Usage Example
+
+Here's a complete example that detects hardware, loads the model database, and finds the best fitting models:
+
+```rust
+use llmfit_core::{
+    SystemSpecs, ModelDatabase, ModelFit, 
+    FitLevel, rank_models_by_fit
+};
+
+fn main() {
+    // 1. Detect system hardware
+    let specs = SystemSpecs::detect();
+    specs.display();
+    
+    // 2. Load model database
+    let db = ModelDatabase::new();
+    println!("Loaded {} models", db.get_all_models().len());
+    
+    // 3. Analyze all models
+    let mut fits: Vec<ModelFit> = db.get_all_models()
+        .iter()
+        .map(|model| ModelFit::analyze(model, &specs))
+        .collect();
+    
+    // 4. Rank by fit quality
+    fits = rank_models_by_fit(fits);
+    
+    // 5. Display top 5 runnable models
+    println!("\nTop 5 recommended models:");
+    for (i, fit) in fits.iter()
+        .filter(|f| f.fit_level != FitLevel::TooTight)
+        .take(5)
+        .enumerate() 
+    {
+        println!("{}. {} - {} fit, {:.1} tok/s",
+            i + 1,
+            fit.model.name,
+            fit.fit_text(),
+            fit.estimated_tps
+        );
+    }
+}
+```
+
+## Public API Surface
+
+All public types and functions are re-exported from the crate root:
+
+```rust
+// From lib.rs
+pub use fit::{
+    FitLevel, InferenceRuntime, ModelFit, 
+    RunMode, ScoreComponents, SortColumn
+};
+pub use hardware::{GpuBackend, SystemSpecs};
+pub use models::{LlmModel, ModelDatabase, UseCase};
+pub use plan::{
+    HardwareEstimate, PathEstimate, PlanCurrentStatus, 
+    PlanEstimate, PlanRequest, PlanRunPath, UpgradeDelta, 
+    estimate_model_plan, normalize_quant, resolve_model_selector,
+};
+pub use providers::{
+    LlamaCppProvider, MlxProvider, ModelProvider, OllamaProvider
+};
+```
+
+## Feature Flags
+
+No feature flags are currently defined. All functionality is enabled by default.
+
+## Platform Support
+
+- **Linux**: Full support (NVIDIA, AMD, Intel GPUs)
+- **macOS**: Full support (Apple Silicon unified memory)
+- **Windows**: Full support (NVIDIA, AMD GPUs via WMI)
+- **Cross-compilation**: Supported via standard Rust toolchains
+
+## Error Handling
+
+Most functions use `Result<T, String>` for error reporting. Hardware detection never panics - it returns sensible defaults if detection fails.
+
+```rust
+let specs = SystemSpecs::detect(); // Never panics
+assert!(specs.total_ram_gb > 0.0);
+```
+
+## Thread Safety
+
+All types are `Send + Sync` unless otherwise noted. Hardware detection can be called from any thread.
+
+## Next Steps
+
+- [Hardware API](/api/library/hardware) - System detection details
+- [Models API](/api/library/models) - Model database and queries
+- [Fit API](/api/library/fit) - Model fit analysis and scoring
+- [Providers API](/api/library/providers) - Runtime provider integration

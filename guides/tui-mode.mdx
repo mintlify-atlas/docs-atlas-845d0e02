@@ -1,0 +1,342 @@
+---
+title: TUI Mode
+description: Interactive terminal interface for browsing and managing LLM models
+---
+
+The TUI (Terminal User Interface) is llmfit's default mode, providing an interactive, keyboard-driven interface for browsing models, filtering by fit level, searching, and downloading models directly to local runtime providers.
+
+## Launching TUI Mode
+
+```bash
+# Default mode - just run llmfit
+llmfit
+
+# With GPU memory override
+llmfit --memory 24G
+
+# With context length cap
+llmfit --max-context 8192
+
+# Both flags together
+llmfit --memory 32G --max-context 16384
+```
+
+## Interface Layout
+
+The TUI is divided into four regions:
+
+1. **System Bar** (top) - Shows CPU, RAM, GPU hardware, and provider status (Ollama, MLX, llama.cpp)
+2. **Search & Filters** (second row) - Search box, provider/use-case filters, sort column, fit filter, availability filter, theme selector
+3. **Model Table** (main area) - Scrollable list of models with scores, quantization, memory usage, and fit indicators
+4. **Status Bar** (bottom) - Keybinding hints and download progress
+
+## Core Keybindings
+
+### Navigation
+
+<ParamField path="↑ / ↓" type="keys">
+  Navigate up/down through model list
+</ParamField>
+
+<ParamField path="j / k" type="keys">
+  Vim-style navigation (down/up)
+</ParamField>
+
+<ParamField path="PgUp / PgDn" type="keys">
+  Scroll by 10 rows
+</ParamField>
+
+<ParamField path="Ctrl-U / Ctrl-D" type="keys">
+  Half-page scroll (up/down by 5 rows)
+</ParamField>
+
+<ParamField path="g / G" type="keys">
+  Jump to top / bottom of list
+</ParamField>
+
+<ParamField path="Home / End" type="keys">
+  Alternative keys for top/bottom navigation
+</ParamField>
+
+### Search & Filtering
+
+<ParamField path="/" type="key">
+  Enter search mode. Type to filter models by name, provider, parameters, or use case. All terms must match (AND logic).
+</ParamField>
+
+<ParamField path="Esc / Enter" type="keys">
+  Exit search mode (while in search)
+</ParamField>
+
+<ParamField path="Ctrl-U" type="key">
+  Clear search query
+</ParamField>
+
+<ParamField path="f" type="key">
+  Cycle fit filter: All → Runnable → Perfect → Good → Marginal → Too Tight → All
+</ParamField>
+
+<ParamField path="a" type="key">
+  Cycle availability filter: All → GGUF Avail → Installed → All
+</ParamField>
+
+<ParamField path="s" type="key">
+  Cycle sort column: Score → Params → Mem% → Ctx → Date → Use Case → Score
+</ParamField>
+
+<ParamField path="P" type="key">
+  Open provider filter popup (capital P). Use ↑/↓ to navigate, Space/Enter to toggle, 'a' to select all.
+</ParamField>
+
+<ParamField path="U" type="key">
+  Open use-case filter popup (capital U). Use ↑/↓ to navigate, Space/Enter to toggle, 'a' to select all.
+</ParamField>
+
+### Model Details & Planning
+
+<ParamField path="Enter" type="key">
+  Toggle detail view for selected model. Shows full metadata, scoring breakdown, MoE architecture info, memory requirements, GGUF sources, and installation status.
+</ParamField>
+
+<ParamField path="p" type="key">
+  Open Plan mode for selected model (hardware planning). Allows editing context length, quantization, and target TPS to estimate required hardware.
+</ParamField>
+
+### Provider Integration
+
+<ParamField path="d" type="key">
+  Download selected model. Opens provider picker if multiple providers are available (Ollama vs llama.cpp). Shows animated progress indicator during download.
+</ParamField>
+
+<ParamField path="r" type="key">
+  Refresh installed models from all runtime providers (Ollama, MLX, llama.cpp)
+</ParamField>
+
+<ParamField path="i" type="key">
+  Toggle installed-first sorting. When enabled, models detected in any runtime provider appear at the top.
+</ParamField>
+
+### Display Options
+
+<ParamField path="t" type="key">
+  Cycle color theme: Default → Dracula → Solarized → Nord → Monokai → Gruvbox → Default. Theme selection is saved automatically to `~/.config/llmfit/theme`.
+</ParamField>
+
+### Exit
+
+<ParamField path="q / Esc" type="keys">
+  Quit TUI (or close detail view if open)
+</ParamField>
+
+## Search Mode
+
+Press `/` to enter search mode. The search box border turns highlighted, and you can type to filter models.
+
+**Search features:**
+- Partial matching across model name, provider, parameter count, use case, and category
+- Multiple terms (space-separated) use AND logic - all terms must be present
+- Case-insensitive
+- Real-time filtering as you type
+- Navigate results with ↑/↓ while in search mode
+
+**Examples:**
+```
+llama 8b        # Matches "Llama-3.1-8B", "Llama-3.2-8B", etc.
+coding qwen     # Matches Qwen models with "coding" use case
+mistral 7b      # Matches Mistral 7B variants
+```
+
+Press `Esc` or `Enter` to exit search mode. Press `Ctrl-U` to clear the search.
+
+## Plan Mode
+
+Plan mode inverts normal fit analysis: instead of "what fits my hardware?", it estimates "what hardware is needed for this model config?"
+
+**Entering Plan Mode:**
+1. Navigate to a model row
+2. Press `p`
+
+**Editable Fields:**
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `j` / `↓` | Move to next field |
+| `Shift-Tab` / `k` / `↑` | Move to previous field |
+| `←` / `→` | Move cursor within current field |
+| Type | Edit current field (digits only for Context/TPS, alphanumeric for Quant) |
+| `Backspace` / `Delete` | Remove characters |
+| `Ctrl-U` | Clear current field |
+| `Esc` / `q` | Exit Plan mode |
+
+**Fields:**
+
+<ParamField path="Context" type="number" required>
+  Context length in tokens (e.g., 8192, 16384). Affects memory estimation.
+</ParamField>
+
+<ParamField path="Quant" type="string">
+  Quantization override (e.g., Q4_K_M, Q8_0, mlx-4bit). Leave empty for auto-selection.
+</ParamField>
+
+<ParamField path="Target TPS" type="number">
+  Target decode speed in tokens/second. Used to recommend GPU memory bandwidth.
+</ParamField>
+
+**Plan Output:**
+- **Minimum Hardware**: VRAM/RAM/CPU cores needed to run the model
+- **Recommended Hardware**: Specs for optimal performance
+- **Run Paths**: Feasibility of GPU, CPU+GPU offload, and CPU-only modes with estimated TPS and fit level
+- **Upgrade Deltas**: Specific hardware changes needed to reach better fit targets
+
+## Provider Filter Popup
+
+Press `P` (capital P) to open the provider filter popup.
+
+**Controls:**
+- `↑` / `↓` or `j` / `k`: Navigate
+- `Space` / `Enter`: Toggle checkbox for current provider
+- `a`: Toggle all providers (select all / deselect all)
+- `Esc` / `P` / `q`: Close popup
+
+**Display:**
+- `[x]` indicates provider is enabled
+- `[ ]` indicates provider is disabled
+- Active count shown in title: "Providers (N/Total)"
+- Selected row highlighted
+
+Filtering is applied immediately when you toggle providers.
+
+## Use-Case Filter Popup
+
+Press `U` (capital U) to open the use-case filter popup.
+
+**Controls:**
+- `↑` / `↓` or `j` / `k`: Navigate
+- `Space` / `Enter`: Toggle checkbox for current use case
+- `a`: Toggle all use cases (select all / deselect all)
+- `Esc` / `U` / `q`: Close popup
+
+**Available Use Cases:**
+- General
+- Coding
+- Reasoning
+- Chat
+- Multimodal
+- Embedding
+
+## Download Functionality
+
+Press `d` on any model to download it to a local runtime provider.
+
+**Provider Selection:**
+
+If multiple providers are available, a popup appears:
+1. **Ollama**: Pulls via Ollama API (`ollama pull <tag>`)
+2. **llama.cpp**: Downloads GGUF from HuggingFace to local cache
+
+Use `↑`/`↓` to select provider, `Enter` to confirm.
+
+**Download Progress:**
+- Progress bar appears in the "Inst" column for the downloading model
+- Animated spinner shows activity
+- Percentage displayed when available (Ollama and llama.cpp)
+- Status message shown in status bar
+- Row highlighted during download
+
+**Install Detection:**
+
+The "Inst" column shows:
+- `✓` - Model installed in at least one provider
+- `O` - Available via Ollama only
+- `L` - Available via llama.cpp only
+- `OL` - Available via both Ollama and llama.cpp
+- `…` - Checking availability (background probe)
+- `—` - Not available for download
+- Animated progress indicator - Currently downloading
+
+## Fit Filter Modes
+
+| Filter | Description |
+|--------|-------------|
+| **All** | Shows all models regardless of fit |
+| **Runnable** | Perfect + Good + Marginal (excludes Too Tight) |
+| **Perfect** | Only models that meet recommended VRAM/RAM on GPU |
+| **Good** | Models that fit with headroom (GPU, MoE offload, or CPU+GPU) |
+| **Marginal** | Tight fit or CPU-only (CPU-only always caps at Marginal) |
+| **Too Tight** | Models that don't fit in VRAM or system RAM |
+
+Cycle with the `f` key.
+
+## Availability Filter Modes
+
+| Filter | Description |
+|--------|-------------|
+| **All** | Shows all models |
+| **GGUF Avail** | Only models with known GGUF download sources (unsloth, bartowski, etc.) |
+| **Installed** | Only models already installed in Ollama, MLX, or llama.cpp |
+
+Cycle with the `a` key.
+
+## Sort Columns
+
+| Column | Description |
+|--------|-------------|
+| **Score** | Composite ranking (Quality + Speed + Fit + Context) weighted by use case |
+| **Params** | Model parameter count (ascending: smallest first) |
+| **Mem%** | Memory utilization percentage (ascending: most efficient first) |
+| **Ctx** | Context window length (descending: largest first) |
+| **Date** | Release date (descending: newest first) |
+| **Use Case** | Grouped by use-case category (General, Coding, Reasoning, etc.) |
+
+Cycle with the `s` key. Current sort column is indicated with `▼` in the table header.
+
+## Themes
+
+Press `t` to cycle through six built-in color themes:
+
+| Theme | Description |
+|-------|-------------|
+| **Default** | Original llmfit colors (blue/cyan accents, balanced contrast) |
+| **Dracula** | Dark purple background with pastel accents (popular in IDEs) |
+| **Solarized** | Ethan Schoonover's Solarized Dark palette (warm, low-contrast) |
+| **Nord** | Arctic cool blue-gray tones (minimal, frosty) |
+| **Monokai** | Monokai Pro warm syntax colors (yellow/orange accents) |
+| **Gruvbox** | Retro groove palette with warm earth tones (brown/orange) |
+
+Your theme selection is saved to `~/.config/llmfit/theme` and restored on next launch.
+
+## Environment Variables
+
+<ParamField path="OLLAMA_HOST" type="string">
+  Ollama API URL (default: `http://localhost:11434`). Set to connect to remote Ollama instances.
+  
+  Example: `OLLAMA_HOST="http://192.168.1.100:11434" llmfit`
+</ParamField>
+
+<ParamField path="OLLAMA_CONTEXT_LENGTH" type="integer">
+  Context length fallback for memory estimation when `--max-context` is not set.
+  
+  Example: `OLLAMA_CONTEXT_LENGTH=8192 llmfit`
+</ParamField>
+
+## Tips
+
+<Tip>
+  **Fast navigation**: Use `g` / `G` to jump to top/bottom, then use `j` / `k` for fine control. Combine with search (`/`) to quickly find specific models.
+</Tip>
+
+<Tip>
+  **Multi-term search**: Search for "coding 14b" to find all 14B parameter coding models. All terms must match.
+</Tip>
+
+<Tip>
+  **Plan mode workflow**: Press `p` on a model, adjust context to your workload (e.g., 32k for long documents), and see if you need more VRAM/RAM.
+</Tip>
+
+<Tip>
+  **Install detection latency**: The TUI probes download availability in the background. The "Inst" column may show `…` briefly while checking. This is normal and non-blocking.
+</Tip>
+
+<Note>
+  Ollama, MLX, or llama.cpp must be installed for download (`d`) and refresh (`r`) functionality. The TUI works without them, but provider-specific features will be disabled.
+</Note>

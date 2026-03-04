@@ -1,0 +1,555 @@
+---
+title: Providers
+description: Runtime model provider integration API
+---
+
+# Providers API
+
+The `providers` module integrates with runtime model providers (Ollama, llama.cpp, MLX) for detecting installed models and pulling new ones.
+
+## Core Trait
+
+### `ModelProvider`
+
+Trait for runtime providers:
+
+```rust
+pub trait ModelProvider {
+    fn name(&self) -> &str;
+    fn is_available(&self) -> bool;
+    fn installed_models(&self) -> HashSet<String>;
+    fn start_pull(&self, model_tag: &str) -> Result<PullHandle, String>;
+}
+```
+
+**Methods:**
+
+- `name()` - Human-readable provider name
+- `is_available()` - Whether provider service is reachable
+- `installed_models()` - Set of installed model names (lowercase)
+- `start_pull()` - Begin downloading a model (returns handle for progress polling)
+
+## Ollama Provider
+
+### `OllamaProvider`
+
+Integrates with Ollama daemon:
+
+```rust
+pub struct OllamaProvider {
+    // Private fields
+}
+
+impl OllamaProvider {
+    pub fn new() -> Self;
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>);
+    pub fn has_remote_tag(&self, model_tag: &str) -> bool;
+}
+```
+
+**Configuration:**
+
+Reads `OLLAMA_HOST` environment variable, defaults to `http://localhost:11434`.
+
+**Example:**
+
+```rust
+use llmfit_core::{OllamaProvider, ModelProvider};
+
+let provider = OllamaProvider::new();
+
+if provider.is_available() {
+    println!("Ollama is running");
+    
+    let installed = provider.installed_models();
+    println!("Installed: {} models", installed.len());
+    
+    for model in installed.iter().take(5) {
+        println!("  - {}", model);
+    }
+}
+```
+
+### Pulling Models
+
+```rust
+let provider = OllamaProvider::new();
+
+match provider.start_pull("llama3.1:8b") {
+    Ok(handle) => {
+        println!("Downloading {}...", handle.model_tag);
+        
+        loop {
+            match handle.receiver.recv() {
+                Ok(PullEvent::Progress { status, percent }) => {
+                    if let Some(pct) = percent {
+                        println!("{}: {:.1}%", status, pct);
+                    } else {
+                        println!("{}", status);
+                    }
+                }
+                Ok(PullEvent::Done) => {
+                    println!("Download complete!");
+                    break;
+                }
+                Ok(PullEvent::Error(err)) => {
+                    eprintln!("Error: {}", err);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    Err(e) => eprintln!("Failed to start pull: {}", e),
+}
+```
+
+### `detect_with_installed()`
+
+Single-pass detection (avoids duplicate API calls):
+
+```rust
+pub fn detect_with_installed(&self) -> (bool, HashSet<String>)
+```
+
+**Returns:** `(available, installed_models)`
+
+**Example:**
+
+```rust
+let provider = OllamaProvider::new();
+let (available, installed) = provider.detect_with_installed();
+
+if available {
+    println!("Ollama running with {} models", installed.len());
+}
+```
+
+### `has_remote_tag()`
+
+Checks if model exists in Ollama registry:
+
+```rust
+pub fn has_remote_tag(&self, model_tag: &str) -> bool
+```
+
+**Example:**
+
+```rust
+let provider = OllamaProvider::new();
+
+if provider.has_remote_tag("llama3.1:8b") {
+    println!("Model available for pull");
+}
+```
+
+## llama.cpp Provider
+
+### `LlamaCppProvider`
+
+Downloads GGUF files directly from HuggingFace:
+
+```rust
+pub struct LlamaCppProvider {
+    // Private fields
+}
+
+impl LlamaCppProvider {
+    pub fn new() -> Self;
+    pub fn models_dir(&self) -> &std::path::Path;
+    pub fn llama_cli_path(&self) -> Option<&str>;
+    pub fn llama_server_path(&self) -> Option<&str>;
+    pub fn list_gguf_files(&self) -> Vec<PathBuf>;
+    
+    // Static methods
+    pub fn search_hf_gguf(query: &str) -> Vec<(String, String)>;
+    pub fn list_repo_gguf_files(repo_id: &str) -> Vec<(String, u64)>;
+    pub fn select_best_gguf(
+        files: &[(String, u64)],
+        budget_gb: f64
+    ) -> Option<(String, u64)>;
+    pub fn download_gguf(
+        &self,
+        repo_id: &str,
+        filename: &str
+    ) -> Result<PullHandle, String>;
+}
+```
+
+**Configuration:**
+
+- Models directory: `~/.cache/llmfit/models` (or `$LLMFIT_MODELS_DIR`)
+- Detects `llama-cli` and `llama-server` in PATH
+
+**Example:**
+
+```rust
+use llmfit_core::{LlamaCppProvider, ModelProvider};
+
+let provider = LlamaCppProvider::new();
+
+println!("Models dir: {:?}", provider.models_dir());
+println!("llama-cli: {:?}", provider.llama_cli_path());
+println!("llama-server: {:?}", provider.llama_server_path());
+
+if provider.is_available() {
+    let gguf_files = provider.list_gguf_files();
+    println!("Local GGUF files: {}", gguf_files.len());
+    
+    for path in gguf_files {
+        println!("  {:?}", path.file_name());
+    }
+}
+```
+
+### Searching HuggingFace
+
+```rust
+let results = LlamaCppProvider::search_hf_gguf("llama-3.1-8b");
+
+println!("Found {} repos:", results.len());
+for (repo_id, desc) in results {
+    println!("  {} ({})", repo_id, desc);
+}
+```
+
+### Listing Repo Files
+
+```rust
+let files = LlamaCppProvider::list_repo_gguf_files(
+    "bartowski/Llama-3.1-8B-Instruct-GGUF"
+);
+
+println!("GGUF files in repo:");
+for (filename, size_bytes) in &files {
+    let size_gb = *size_bytes as f64 / 1_073_741_824.0;
+    println!("  {} ({:.2} GB)", filename, size_gb);
+}
+```
+
+### Selecting Best Quantization
+
+```rust
+let budget_gb = 16.0; // 16 GB available
+
+if let Some((filename, size)) = LlamaCppProvider::select_best_gguf(
+    &files,
+    budget_gb
+) {
+    let size_gb = size as f64 / 1_073_741_824.0;
+    println!("Best file: {} ({:.2} GB)", filename, size_gb);
+}
+```
+
+Selects highest quality quantization that fits:
+1. Q8_0 (best)
+2. Q6_K
+3. Q5_K_M
+4. Q4_K_M
+5. Q3_K_M
+6. Q2_K (smallest)
+
+### Downloading GGUF Files
+
+```rust
+let provider = LlamaCppProvider::new();
+
+match provider.download_gguf(
+    "bartowski/Llama-3.1-8B-Instruct-GGUF",
+    "Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+) {
+    Ok(handle) => {
+        println!("Downloading {}...", handle.model_tag);
+        
+        loop {
+            match handle.receiver.recv() {
+                Ok(PullEvent::Progress { status, percent }) => {
+                    if let Some(pct) = percent {
+                        print!("\r{}: {:.1}%  ", status, pct);
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                    }
+                }
+                Ok(PullEvent::Done) => {
+                    println!("\nDownload complete!");
+                    break;
+                }
+                Ok(PullEvent::Error(err)) => {
+                    eprintln!("\nError: {}", err);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    Err(e) => eprintln!("Failed to start download: {}", e),
+}
+```
+
+## MLX Provider
+
+### `MlxProvider`
+
+Integrates with Apple MLX framework:
+
+```rust
+pub struct MlxProvider {
+    // Private fields
+}
+
+impl MlxProvider {
+    pub fn new() -> Self;
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>);
+}
+```
+
+**Configuration:**
+
+- MLX server URL: `http://localhost:8080` (or `$MLX_LM_HOST`)
+- Scans `~/.cache/huggingface/hub/` for mlx-community models
+- Checks for `mlx_lm` Python package via `python3 -c "import mlx_lm"`
+
+**Platform:** macOS only
+
+**Example:**
+
+```rust
+use llmfit_core::{MlxProvider, ModelProvider};
+
+let provider = MlxProvider::new();
+
+if !cfg!(target_os = "macos") {
+    println!("MLX requires macOS");
+    return;
+}
+
+if provider.is_available() {
+    let installed = provider.installed_models();
+    println!("MLX models: {}", installed.len());
+    
+    for model in installed {
+        println!("  - {}", model);
+    }
+}
+```
+
+### Pulling MLX Models
+
+Uses HuggingFace CLI to download from mlx-community:
+
+```rust
+let provider = MlxProvider::new();
+
+// Downloads from mlx-community/Llama-3.1-8B-Instruct-4bit
+match provider.start_pull("Llama-3.1-8B-Instruct-4bit") {
+    Ok(handle) => {
+        loop {
+            match handle.receiver.recv() {
+                Ok(PullEvent::Progress { status, .. }) => {
+                    println!("{}", status);
+                }
+                Ok(PullEvent::Done) => {
+                    println!("Download complete!");
+                    break;
+                }
+                Ok(PullEvent::Error(err)) => {
+                    eprintln!("Error: {}", err);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    Err(e) => eprintln!("Failed to start pull: {}", e),
+}
+```
+
+**Requirements:**
+
+MLX pulls require `hf` CLI:
+
+```bash
+uv tool install 'huggingface_hub[cli]'
+```
+
+## Pull Events
+
+### `PullHandle`
+
+Handle for monitoring download progress:
+
+```rust
+pub struct PullHandle {
+    pub model_tag: String,
+    pub receiver: std::sync::mpsc::Receiver<PullEvent>,
+}
+```
+
+### `PullEvent`
+
+Progress events:
+
+```rust
+pub enum PullEvent {
+    Progress {
+        status: String,
+        percent: Option<f64>,
+    },
+    Done,
+    Error(String),
+}
+```
+
+**Example Progress Handler:**
+
+```rust
+fn handle_pull(handle: PullHandle) {
+    loop {
+        match handle.receiver.recv() {
+            Ok(PullEvent::Progress { status, percent }) => {
+                match percent {
+                    Some(pct) => {
+                        print!("\r{}: {:.1}%  ", status, pct);
+                    }
+                    None => {
+                        println!("{}", status);
+                    }
+                }
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+            }
+            Ok(PullEvent::Done) => {
+                println!("\n✓ Download complete");
+                break;
+            }
+            Ok(PullEvent::Error(err)) => {
+                eprintln!("\n✗ Error: {}", err);
+                break;
+            }
+            Err(_) => {
+                eprintln!("\n✗ Channel closed");
+                break;
+            }
+        }
+    }
+}
+```
+
+## Name Mapping Helpers
+
+Helpers for mapping HuggingFace model names to provider-specific formats:
+
+### Ollama
+
+```rust
+use llmfit_core::providers::{
+    ollama_pull_tag,
+    is_model_installed_ollama,
+};
+
+// Get Ollama tag for HF model
+if let Some(tag) = ollama_pull_tag("Llama-3.1-8B-Instruct") {
+    println!("Ollama tag: {}", tag); // "llama3.1:8b"
+}
+
+// Check if installed
+let provider = OllamaProvider::new();
+let installed = provider.installed_models();
+if is_model_installed_ollama("Llama-3.1-8B-Instruct", &installed) {
+    println!("Model is installed");
+}
+```
+
+### llama.cpp
+
+```rust
+use llmfit_core::providers::{
+    gguf_pull_tag,
+    hf_name_to_gguf_candidates,
+    is_model_installed_llamacpp,
+};
+
+// Get GGUF repo for HF model
+if let Some(repo) = gguf_pull_tag("Llama-3.1-8B-Instruct") {
+    println!("GGUF repo: {}", repo);
+    // "bartowski/Llama-3.1-8B-Instruct-GGUF"
+}
+
+// Get candidate repos
+let candidates = hf_name_to_gguf_candidates("Qwen2.5-7B-Instruct");
+for candidate in candidates {
+    println!("  - {}", candidate);
+}
+
+// Check if installed
+let provider = LlamaCppProvider::new();
+let installed = provider.installed_models();
+if is_model_installed_llamacpp("Llama-3.1-8B-Instruct", &installed) {
+    println!("Model is installed locally");
+}
+```
+
+### MLX
+
+```rust
+use llmfit_core::providers::{
+    mlx_pull_tag,
+    is_model_installed_mlx,
+};
+
+// Get MLX tag for HF model
+let tag = mlx_pull_tag("Llama-3.1-8B-Instruct");
+println!("MLX tag: {}", tag);
+// "llama-3.1-8b-instruct-4bit" (prefers 4-bit)
+
+// Check if installed
+let provider = MlxProvider::new();
+let installed = provider.installed_models();
+if is_model_installed_mlx("Llama-3.1-8B-Instruct", &installed) {
+    println!("Model is installed");
+}
+```
+
+## Complete Example
+
+```rust
+use llmfit_core::{
+    OllamaProvider, LlamaCppProvider, MlxProvider,
+    ModelProvider, SystemSpecs, GpuBackend,
+};
+
+fn main() {
+    let specs = SystemSpecs::detect();
+    
+    // Initialize all providers
+    let ollama = OllamaProvider::new();
+    let llamacpp = LlamaCppProvider::new();
+    let mlx = MlxProvider::new();
+    
+    println!("\n=== Provider Status ===");
+    
+    // Check Ollama
+    if ollama.is_available() {
+        let installed = ollama.installed_models();
+        println!("✓ Ollama: {} models", installed.len());
+    } else {
+        println!("✗ Ollama: not running");
+    }
+    
+    // Check llama.cpp
+    if llamacpp.is_available() {
+        let installed = llamacpp.installed_models();
+        println!("✓ llama.cpp: {} models", installed.len());
+    } else {
+        println!("✗ llama.cpp: binaries not found");
+    }
+    
+    // Check MLX
+    if specs.backend == GpuBackend::Metal && mlx.is_available() {
+        let installed = mlx.installed_models();
+        println!("✓ MLX: {} models", installed.len());
+    } else if specs.backend != GpuBackend::Metal {
+        println!("- MLX: requires Apple Silicon");
+    } else {
+        println!("✗ MLX: not installed");
+    }
+}
+```

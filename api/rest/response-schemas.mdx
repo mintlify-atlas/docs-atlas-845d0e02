@@ -1,0 +1,444 @@
+---
+title: 'Response Schemas'
+description: 'Complete field definitions for API responses'
+---
+
+## Response Envelope
+
+All model-listing endpoints (`/api/v1/models`, `/api/v1/models/top`, `/api/v1/models/{name}`) return this envelope:
+
+<ResponseField name="node" type="object" required>
+  Node identity information
+  <Expandable title="properties">
+    <ResponseField name="name" type="string" required>
+      Node hostname from `$HOSTNAME` environment variable (defaults to `"unknown-node"`)
+    </ResponseField>
+    <ResponseField name="os" type="string" required>
+      Operating system: `"linux"`, `"macos"`, or `"windows"`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="system" type="object" required>
+  Hardware specifications (see [System Object](#system-object) below)
+</ResponseField>
+
+<ResponseField name="total_models" type="integer" required>
+  Total number of models matching filters (before limit applied)
+</ResponseField>
+
+<ResponseField name="returned_models" type="integer" required>
+  Number of models in the response (after limit applied)
+</ResponseField>
+
+<ResponseField name="filters" type="object" required>
+  Echo of active query parameters for audit trails
+  <Expandable title="properties">
+    <ResponseField name="limit" type="integer | null">
+      Limit parameter value
+    </ResponseField>
+    <ResponseField name="perfect" type="boolean | null">
+      Perfect filter value
+    </ResponseField>
+    <ResponseField name="min_fit" type="string | null">
+      Minimum fit level filter
+    </ResponseField>
+    <ResponseField name="runtime" type="string | null">
+      Runtime filter
+    </ResponseField>
+    <ResponseField name="use_case" type="string | null">
+      Use case filter
+    </ResponseField>
+    <ResponseField name="provider" type="string | null">
+      Provider filter
+    </ResponseField>
+    <ResponseField name="search" type="string | null">
+      Search query
+    </ResponseField>
+    <ResponseField name="sort" type="string | null">
+      Sort column
+    </ResponseField>
+    <ResponseField name="max_context" type="integer | null">
+      Context limit used
+    </ResponseField>
+    <ResponseField name="include_too_tight" type="boolean | null">
+      Whether too_tight fits are included
+    </ResponseField>
+    <ResponseField name="top_only" type="boolean" required>
+      Whether this is a `/models/top` request
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="models" type="array" required>
+  Array of model fit objects (see [Model Object](#model-object) below)
+</ResponseField>
+
+---
+
+## System Object
+
+Hardware specifications detected on the node.
+
+<ResponseField name="total_ram_gb" type="number" required>
+  Total system RAM in gigabytes (rounded to 2 decimals)
+</ResponseField>
+
+<ResponseField name="available_ram_gb" type="number" required>
+  Currently available system RAM in gigabytes
+</ResponseField>
+
+<ResponseField name="cpu_cores" type="integer" required>
+  Number of logical CPU cores
+</ResponseField>
+
+<ResponseField name="cpu_name" type="string" required>
+  CPU model name (e.g., `"Intel(R) Core(TM) Ultra 7 165U"`)
+</ResponseField>
+
+<ResponseField name="has_gpu" type="boolean" required>
+  Whether any GPU was detected
+</ResponseField>
+
+<ResponseField name="gpu_vram_gb" type="number | null" required>
+  Total VRAM across all GPUs in gigabytes (null if no GPU)
+</ResponseField>
+
+<ResponseField name="gpu_name" type="string | null" required>
+  Primary GPU name (null if no GPU)
+</ResponseField>
+
+<ResponseField name="gpu_count" type="integer" required>
+  Number of GPUs detected
+</ResponseField>
+
+<ResponseField name="unified_memory" type="boolean" required>
+  Whether system uses unified memory (Apple Silicon). When true, VRAM = system RAM.
+</ResponseField>
+
+<ResponseField name="backend" type="string" required>
+  Detected inference backend:
+  - `"CUDA"` - NVIDIA GPU
+  - `"ROCm"` - AMD GPU
+  - `"Metal"` - Apple Silicon GPU
+  - `"CPU (x86)"` - x86_64 CPU fallback
+  - `"CPU (ARM)"` - ARM CPU fallback
+</ResponseField>
+
+<ResponseField name="gpus" type="array" required>
+  Array of individual GPU objects
+  <Expandable title="GPU object properties">
+    <ResponseField name="name" type="string" required>
+      GPU model name
+    </ResponseField>
+    <ResponseField name="vram_gb" type="number | null" required>
+      VRAM for this GPU in gigabytes (null if not detected)
+    </ResponseField>
+    <ResponseField name="backend" type="string" required>
+      Backend for this GPU (CUDA, ROCm, Metal, etc.)
+    </ResponseField>
+    <ResponseField name="count" type="integer" required>
+      Number of identical GPUs
+    </ResponseField>
+    <ResponseField name="unified_memory" type="boolean" required>
+      Whether this GPU uses unified memory
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "total_ram_gb": 62.23,
+  "available_ram_gb": 41.08,
+  "cpu_cores": 14,
+  "cpu_name": "Intel(R) Core(TM) Ultra 7 165U",
+  "has_gpu": true,
+  "gpu_vram_gb": 24.0,
+  "gpu_name": "NVIDIA RTX 4090",
+  "gpu_count": 1,
+  "unified_memory": false,
+  "backend": "CUDA",
+  "gpus": [
+    {
+      "name": "NVIDIA RTX 4090",
+      "vram_gb": 24.0,
+      "backend": "CUDA",
+      "count": 1,
+      "unified_memory": false
+    }
+  ]
+}
+```
+
+---
+
+## Model Object
+
+Complete fit analysis for a single model on the current node.
+
+### Model Identity
+
+<ResponseField name="name" type="string" required>
+  Full model identifier (e.g., `"meta-llama/Llama-3.3-70B-Instruct"`)
+</ResponseField>
+
+<ResponseField name="provider" type="string" required>
+  Model provider/creator (e.g., `"Meta"`, `"Qwen"`, `"Mistral AI"`)
+</ResponseField>
+
+<ResponseField name="parameter_count" type="string" required>
+  Human-readable parameter count (e.g., `"7B"`, `"70B"`, `"8x7B"` for MoE)
+</ResponseField>
+
+<ResponseField name="params_b" type="number" required>
+  Numeric parameter count in billions (rounded to 2 decimals)
+</ResponseField>
+
+<ResponseField name="context_length" type="integer" required>
+  Maximum context window in tokens
+</ResponseField>
+
+<ResponseField name="release_date" type="string" required>
+  Release date in `YYYY-MM-DD` format
+</ResponseField>
+
+<ResponseField name="is_moe" type="boolean" required>
+  Whether model uses Mixture of Experts architecture
+</ResponseField>
+
+### Use Case Classification
+
+<ResponseField name="use_case" type="string" required>
+  Primary use case specialization:
+  - `"General"` - General-purpose
+  - `"Coding"` - Code generation
+  - `"Reasoning"` - Complex reasoning
+  - `"Chat"` - Conversational
+  - `"Multimodal"` - Vision + language
+  - `"Embedding"` - Text embeddings
+</ResponseField>
+
+<ResponseField name="category" type="string" required>
+  Use case label (same as `use_case`, for display purposes)
+</ResponseField>
+
+### Fit Analysis
+
+<ResponseField name="fit_level" type="string" required>
+  Model fit classification:
+  - `"perfect"` - Fits entirely in VRAM with optimal quantization
+  - `"good"` - Fits comfortably with reasonable performance
+  - `"marginal"` - Barely fits, may require aggressive quantization
+  - `"too_tight"` - Insufficient memory, unrunnable
+</ResponseField>
+
+<ResponseField name="fit_label" type="string" required>
+  Human-readable fit level (e.g., `"Perfect"`, `"Good"`)
+</ResponseField>
+
+<ResponseField name="run_mode" type="string" required>
+  Execution strategy:
+  - `"gpu"` - Full GPU inference (weights in VRAM)
+  - `"moe_offload"` - MoE with expert offloading
+  - `"cpu_offload"` - GPU with layer offloading to RAM
+  - `"cpu_only"` - CPU-only inference (weights in system RAM)
+</ResponseField>
+
+<ResponseField name="run_mode_label" type="string" required>
+  Human-readable run mode (e.g., `"GPU"`, `"CPU Offload"`)
+</ResponseField>
+
+### Scoring
+
+<ResponseField name="score" type="number" required>
+  Overall fit score (0-100, rounded to 1 decimal). Composite of quality, speed, fit, and context scores.
+</ResponseField>
+
+<ResponseField name="score_components" type="object" required>
+  Breakdown of score components
+  <Expandable title="properties">
+    <ResponseField name="quality" type="number" required>
+      Model quality score based on parameter count and architecture
+    </ResponseField>
+    <ResponseField name="speed" type="number" required>
+      Inference speed score based on estimated tokens per second
+    </ResponseField>
+    <ResponseField name="fit" type="number" required>
+      Memory fit score based on utilization and headroom
+    </ResponseField>
+    <ResponseField name="context" type="number" required>
+      Context window score based on available context length
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Performance Estimates
+
+<ResponseField name="estimated_tps" type="number" required>
+  Estimated tokens per second throughput (rounded to 1 decimal)
+</ResponseField>
+
+<ResponseField name="runtime" type="string" required>
+  Recommended inference runtime:
+  - `"mlx"` - Apple MLX (Apple Silicon only)
+  - `"llamacpp"` - llama.cpp (CUDA, ROCm, Metal, CPU)
+</ResponseField>
+
+<ResponseField name="runtime_label" type="string" required>
+  Human-readable runtime (e.g., `"MLX"`, `"llama.cpp"`)
+</ResponseField>
+
+<ResponseField name="best_quant" type="string" required>
+  Recommended quantization level (e.g., `"Q5_K_M"`, `"Q4_K_M"`, `"Q8_0"`)
+</ResponseField>
+
+### Memory Analysis
+
+<ResponseField name="memory_required_gb" type="number" required>
+  Memory required to run this model in gigabytes (rounded to 2 decimals)
+</ResponseField>
+
+<ResponseField name="memory_available_gb" type="number" required>
+  Memory available on this node in gigabytes (VRAM for GPU, RAM for CPU)
+</ResponseField>
+
+<ResponseField name="utilization_pct" type="number" required>
+  Memory utilization percentage (rounded to 1 decimal):
+  ```
+  (memory_required_gb / memory_available_gb) * 100
+  ```
+</ResponseField>
+
+### Additional Metadata
+
+<ResponseField name="notes" type="array" required>
+  Array of warning/info strings (e.g., `["Requires layer offloading"]`). Empty array if no notes.
+</ResponseField>
+
+<ResponseField name="gguf_sources" type="array" required>
+  Array of GGUF source URLs (empty for most models, populated when available)
+</ResponseField>
+
+### Example
+
+```json
+{
+  "name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+  "provider": "Qwen",
+  "parameter_count": "7B",
+  "params_b": 7.0,
+  "context_length": 32768,
+  "use_case": "Coding",
+  "category": "Coding",
+  "release_date": "2024-11-12",
+  "is_moe": false,
+  "fit_level": "good",
+  "fit_label": "Good",
+  "run_mode": "gpu",
+  "run_mode_label": "GPU",
+  "score": 86.5,
+  "score_components": {
+    "quality": 87.0,
+    "speed": 81.2,
+    "fit": 90.1,
+    "context": 88.0
+  },
+  "estimated_tps": 42.5,
+  "runtime": "llamacpp",
+  "runtime_label": "llama.cpp",
+  "best_quant": "Q5_K_M",
+  "memory_required_gb": 5.8,
+  "memory_available_gb": 12.0,
+  "utilization_pct": 48.3,
+  "notes": [],
+  "gguf_sources": [
+    "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
+  ]
+}
+```
+
+---
+
+## Fit Levels Explained
+
+| Fit Level | Code | Description |
+|-----------|------|-------------|
+| **Perfect** | `perfect` | Model fits entirely in VRAM with optimal quantization (Q5_K_M or higher). Expected to run at full speed with no degradation. |
+| **Good** | `good` | Model fits comfortably with reasonable quantization (Q4_K_M or Q5_K_M). May use some layer offloading but maintains good performance. |
+| **Marginal** | `marginal` | Model barely fits with aggressive quantization (Q3_K_M or lower) or significant layer offloading. Performance may be impacted. |
+| **Too Tight** | `too_tight` | Insufficient memory to run the model. Excluded from `/models/top` by default. |
+
+---
+
+## Run Modes Explained
+
+| Run Mode | Code | Description |
+|----------|------|-------------|
+| **GPU** | `gpu` | Full GPU inference - all model weights loaded in VRAM. Best performance. |
+| **MoE Offload** | `moe_offload` | Mixture of Experts with selective expert offloading to RAM. Specialized path for MoE models. |
+| **CPU Offload** | `cpu_offload` | GPU inference with some layers offloaded to system RAM. Hybrid execution for models that don't fit entirely in VRAM. |
+| **CPU Only** | `cpu_only` | CPU-only inference with weights in system RAM. Fallback when no GPU or insufficient VRAM. |
+
+**Note:** On unified memory systems (Apple Silicon), `cpu_offload` is skipped because VRAM and system RAM share the same pool.
+
+---
+
+## Quantization Levels
+
+Recommended quantization (`best_quant` field):
+
+| Quant | Bits per Weight | Quality | Use Case |
+|-------|----------------|---------|----------|
+| **Q8_0** | 8 bits | Highest | When VRAM is abundant |
+| **Q6_K** | 6 bits | Very high | Balanced quality/size |
+| **Q5_K_M** | 5 bits | High | **Optimal default** |
+| **Q4_K_M** | 4 bits | Good | Memory-constrained |
+| **Q3_K_M** | 3 bits | Acceptable | Tight memory budget |
+| **Q2_K** | 2 bits | Degraded | Last resort |
+
+The API automatically selects the best quantization level that fits available memory while maximizing quality.
+
+---
+
+## Score Components
+
+The overall `score` field is a weighted composite:
+
+```
+score = (quality * 0.3) + (speed * 0.3) + (fit * 0.25) + (context * 0.15)
+```
+
+**Component breakdown:**
+
+- **quality:** Model capability based on parameter count and architecture
+- **speed:** Inference throughput (tokens per second)
+- **fit:** How well the model fits in available memory (higher = more headroom)
+- **context:** Available context window size
+
+All components and the final score range from 0-100.
+
+---
+
+## Forward Compatibility
+
+Future API versions may add new fields. Clients should:
+
+1. **Parse only required fields** your application depends on
+2. **Ignore unknown fields** to support forward compatibility
+3. **Validate critical fields exist** before accessing
+4. **Handle null values** gracefully for optional fields
+
+**Example robust parsing:**
+
+```python
+for model in response["models"]:
+    if "name" not in model or "fit_level" not in model:
+        continue  # Skip malformed entries
+    
+    if model["fit_level"] not in ["perfect", "good", "marginal"]:
+        continue  # Skip unrunnable models
+    
+    # Safe to use model["name"] and model["fit_level"]
+```

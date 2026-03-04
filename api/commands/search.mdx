@@ -1,0 +1,208 @@
+---
+title: search
+description: Search for specific models
+---
+
+## Synopsis
+
+```bash
+llmfit search <QUERY>
+```
+
+## Description
+
+Searches the model database for models matching a query string. The search looks across model names, providers, parameter sizes, and use cases.
+
+Unlike the `fit` command, `search` shows all matching models regardless of system compatibility.
+
+## Arguments
+
+<ParamField path="query" type="string" required>
+  Search query to match against model name, provider, parameter count, or use case. Case-insensitive.
+</ParamField>
+
+## Usage Examples
+
+### Search by Model Name
+
+```bash
+# Find all Llama models
+llmfit search llama
+
+# Find Qwen models
+llmfit search qwen
+
+# Find DeepSeek models
+llmfit search deepseek
+```
+
+### Search by Provider
+
+```bash
+# Find all Meta models
+llmfit search meta
+
+# Find all Anthropic models
+llmfit search anthropic
+
+# Find all Google models
+llmfit search google
+```
+
+### Search by Size
+
+```bash
+# Find 7B models
+llmfit search 7b
+
+# Find 70B models
+llmfit search 70b
+
+# Find models with specific parameter counts
+llmfit search 405b
+```
+
+### Search by Use Case
+
+```bash
+# Find coding models
+llmfit search coding
+
+# Find reasoning models
+llmfit search reasoning
+
+# Find multimodal models
+llmfit search multimodal
+```
+
+### Search by Partial Name
+
+```bash
+# Find all models with "mistral" in the name
+llmfit search mistral
+
+# Find all "instruct" variants
+llmfit search instruct
+
+# Find "coder" models
+llmfit search coder
+```
+
+## Example Output
+
+### Successful Search
+
+```bash
+$ llmfit search llama
+```
+
+```
+=== Search Results for 'llama' ===
+Found 8 model(s)
+
+╭─────────┬──────────────────────┬───────────┬──────┬────────┬──────────────┬──────────┬────────────┬─────────┬────────┬─────────╮
+│ Status  │ Model                │ Provider  │ Size │ Score  │ tok/s est.   │ Quant    │ Runtime    │ Mode    │ Mem %  │ Context │
+├─────────┼──────────────────────┼───────────┼──────┼────────┼──────────────┼──────────┼────────────┼─────────┼────────┼─────────┤
+│ --      │ llama-3.3-70b        │ Meta      │ 70B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.1-405b       │ Meta      │ 405B │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.1-70b        │ Meta      │ 70B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.1-8b         │ Meta      │ 8B   │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.2-3b         │ Meta      │ 3B   │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.2-1b         │ Meta      │ 1B   │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.2-11b-vision │ Meta      │ 11B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+│ --      │ llama-3.2-90b-vision │ Meta      │ 90B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 128k    │
+╰─────────┴──────────────────────┴───────────┴──────┴────────┴──────────────┴──────────┴────────────┴─────────┴────────┴─────────╯
+```
+
+### No Results
+
+```bash
+$ llmfit search nonexistent
+```
+
+```
+No models found matching 'nonexistent'
+```
+
+### Provider Search
+
+```bash
+$ llmfit search alibaba
+```
+
+```
+=== Search Results for 'alibaba' ===
+Found 6 model(s)
+
+╭─────────┬─────────────────────────┬───────────┬──────┬────────┬──────────────┬──────────┬────────────┬─────────┬────────┬─────────╮
+│ Status  │ Model                   │ Provider  │ Size │ Score  │ tok/s est.   │ Quant    │ Runtime    │ Mode    │ Mem %  │ Context │
+├─────────┼─────────────────────────┼───────────┼──────┼────────┼──────────────┼──────────┼────────────┼─────────┼────────┼─────────┤
+│ --      │ qwen-2.5-72b            │ Alibaba   │ 72B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 32k     │
+│ --      │ qwen-2.5-32b            │ Alibaba   │ 32B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 32k     │
+│ --      │ qwen-2.5-14b            │ Alibaba   │ 14B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 32k     │
+│ --      │ qwen-2.5-7b             │ Alibaba   │ 7B   │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 32k     │
+│ --      │ qwen-2.5-coder-32b      │ Alibaba   │ 32B  │ -      │ -            │ 4bit     │ -          │ -       │ -      │ 128k    │
+│ --      │ qwq-32b-preview         │ Alibaba   │ 32B  │ -      │ -            │ Q4_K_M   │ -          │ -       │ -      │ 32k     │
+╰─────────┴─────────────────────────┴───────────┴──────┴────────┴──────────────┴──────────┴────────────┴─────────┴────────┴─────────╯
+```
+
+## Search Behavior
+
+The search is:
+
+- **Case-insensitive**: "LLAMA" matches "llama-3.3-70b"
+- **Partial match**: "qwen" matches "qwen-2.5-72b" and "qwq-32b-preview"
+- **Multi-field**: Searches name, provider, size, and use case
+- **Unfiltered**: Shows all matches regardless of system compatibility
+
+## Search Tips
+
+### Be Specific
+
+```bash
+# Too broad (returns many results)
+llmfit search model
+
+# More specific
+llmfit search llama-3.3
+```
+
+### Use Distinctive Terms
+
+```bash
+# Find coding-specific models
+llmfit search coder
+llmfit search codestral
+
+# Find vision/multimodal models
+llmfit search vision
+llmfit search multimodal
+```
+
+### Combine with Other Commands
+
+```bash
+# Search, then get details
+llmfit search deepseek
+llmfit info deepseek-v3
+
+# Search, then check fit
+llmfit search qwen
+llmfit fit --perfect | grep qwen
+```
+
+## Comparison with Other Commands
+
+| Command | Filtering | Output |
+|---------|-----------|--------|
+| `search` | By query string | All matching models |
+| `fit` | By system compatibility | Compatible models only |
+| `list` | None | All models |
+| `info` | By exact/partial name | Detailed single model |
+
+## Related Commands
+
+- [list](/api/commands/list) - List all models
+- [info](/api/commands/info) - Get detailed model information
+- [fit](/api/commands/fit) - Find compatible models
+- [recommend](/api/commands/recommend) - Get top recommendations

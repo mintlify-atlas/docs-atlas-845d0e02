@@ -1,0 +1,298 @@
+---
+title: Hardware
+description: System hardware detection API
+---
+
+# Hardware API
+
+The `hardware` module detects system specifications including CPU, RAM, GPU hardware, and inference backends.
+
+## Core Types
+
+### `SystemSpecs`
+
+The main struct containing all detected hardware information:
+
+```rust
+pub struct SystemSpecs {
+    pub total_ram_gb: f64,
+    pub available_ram_gb: f64,
+    pub total_cpu_cores: usize,
+    pub cpu_name: String,
+    pub has_gpu: bool,
+    pub gpu_vram_gb: Option<f64>,
+    pub total_gpu_vram_gb: Option<f64>,
+    pub gpu_name: Option<String>,
+    pub gpu_count: u32,
+    pub unified_memory: bool,
+    pub backend: GpuBackend,
+    pub gpus: Vec<GpuInfo>,
+}
+```
+
+**Key Fields:**
+
+- `total_ram_gb` - Total system RAM in gigabytes
+- `available_ram_gb` - Currently available RAM (for model loading)
+- `total_cpu_cores` - Number of logical CPU cores
+- `cpu_name` - CPU model name string
+- `has_gpu` - Whether any GPU was detected
+- `gpu_vram_gb` - VRAM of primary GPU (per-card, not total)
+- `total_gpu_vram_gb` - Total VRAM across all same-model GPUs (for multi-GPU inference)
+- `gpu_name` - Primary GPU model name
+- `gpu_count` - Number of same-model GPUs (for multi-GPU setups)
+- `unified_memory` - Whether GPU and CPU share memory pool (Apple Silicon, AMD APUs)
+- `backend` - Primary inference backend for the system
+- `gpus` - All detected GPUs (may span multiple vendors)
+
+### `GpuBackend`
+
+The acceleration backend for inference:
+
+```rust
+pub enum GpuBackend {
+    Cuda,    // NVIDIA GPUs
+    Metal,   // Apple Silicon
+    Rocm,    // AMD GPUs with ROCm
+    Vulkan,  // AMD/other GPUs without ROCm
+    Sycl,    // Intel oneAPI
+    CpuArm,  // ARM CPU (Apple, etc.)
+    CpuX86,  // x86 CPU
+    Ascend,  // Huawei Ascend NPUs
+}
+```
+
+**Methods:**
+
+```rust
+impl GpuBackend {
+    pub fn label(&self) -> &'static str;
+}
+```
+
+Returns human-readable label ("CUDA", "Metal", etc.).
+
+### `GpuInfo`
+
+Information about a single detected GPU:
+
+```rust
+pub struct GpuInfo {
+    pub name: String,
+    pub vram_gb: Option<f64>,
+    pub backend: GpuBackend,
+    pub count: u32,              // >1 for multi-GPU
+    pub unified_memory: bool,
+}
+```
+
+## Functions
+
+### `SystemSpecs::detect()`
+
+Detects system hardware specifications:
+
+```rust
+pub fn detect() -> Self
+```
+
+**Returns:** Complete system specifications
+
+**Example:**
+
+```rust
+use llmfit_core::SystemSpecs;
+
+let specs = SystemSpecs::detect();
+println!("CPU: {} ({} cores)", specs.cpu_name, specs.total_cpu_cores);
+println!("Total RAM: {:.2} GB", specs.total_ram_gb);
+println!("Available RAM: {:.2} GB", specs.available_ram_gb);
+
+if specs.has_gpu {
+    if let Some(name) = &specs.gpu_name {
+        println!("GPU: {}", name);
+    }
+    if let Some(vram) = specs.gpu_vram_gb {
+        println!("VRAM: {:.2} GB", vram);
+    }
+    if specs.unified_memory {
+        println!("Unified memory: GPU and CPU share RAM");
+    }
+}
+```
+
+### `SystemSpecs::with_gpu_memory_override()`
+
+Override detected GPU VRAM (useful when detection fails):
+
+```rust
+pub fn with_gpu_memory_override(self, vram_gb: f64) -> Self
+```
+
+**Parameters:**
+- `vram_gb` - VRAM amount in gigabytes
+
+**Returns:** Updated SystemSpecs
+
+**Example:**
+
+```rust
+let specs = SystemSpecs::detect()
+    .with_gpu_memory_override(24.0);
+
+assert_eq!(specs.gpu_vram_gb, Some(24.0));
+```
+
+### `SystemSpecs::display()`
+
+Prints formatted system specifications:
+
+```rust
+pub fn display(&self)
+```
+
+**Example Output:**
+
+```
+=== System Specifications ===
+CPU: Apple M4 Max (16 cores)
+Total RAM: 128.00 GB
+Available RAM: 102.40 GB
+Backend: Metal
+GPU: Apple M4 Max (unified memory, 128.00 GB shared, Metal)
+```
+
+### `parse_memory_size()`
+
+Parses human-readable memory sizes:
+
+```rust
+pub fn parse_memory_size(s: &str) -> Option<f64>
+```
+
+**Parameters:**
+- `s` - Size string ("32G", "32GB", "32000M", etc.)
+
+**Returns:** Size in gigabytes, or None if invalid
+
+**Example:**
+
+```rust
+use llmfit_core::hardware::parse_memory_size;
+
+assert_eq!(parse_memory_size("32G"), Some(32.0));
+assert_eq!(parse_memory_size("32GB"), Some(32.0));
+assert_eq!(parse_memory_size("16000M"), Some(15.625));
+assert_eq!(parse_memory_size("1T"), Some(1024.0));
+```
+
+### `gpu_memory_bandwidth_gbps()`
+
+Get memory bandwidth for known GPU models:
+
+```rust
+pub fn gpu_memory_bandwidth_gbps(name: &str) -> Option<f64>
+```
+
+**Parameters:**
+- `name` - GPU model name
+
+**Returns:** Memory bandwidth in GB/s, or None if unknown
+
+**Example:**
+
+```rust
+use llmfit_core::hardware::gpu_memory_bandwidth_gbps;
+
+// Known GPUs return bandwidth
+assert_eq!(gpu_memory_bandwidth_gbps("RTX 4090"), Some(1008.0));
+assert_eq!(gpu_memory_bandwidth_gbps("RTX 3090"), Some(936.0));
+assert_eq!(gpu_memory_bandwidth_gbps("T4"), Some(320.0));
+
+// Unknown GPUs return None
+assert_eq!(gpu_memory_bandwidth_gbps("Custom GPU"), None);
+```
+
+This is used for accurate token/s estimation based on memory bandwidth limits.
+
+### `is_running_in_wsl()`
+
+Detects whether running in WSL (Windows Subsystem for Linux):
+
+```rust
+pub fn is_running_in_wsl() -> bool
+```
+
+**Returns:** true if running in WSL, false otherwise
+
+**Example:**
+
+```rust
+use llmfit_core::hardware::is_running_in_wsl;
+
+if is_running_in_wsl() {
+    println!("Running in WSL - GPU detection may require passthrough");
+}
+```
+
+## GPU Detection Details
+
+The hardware detection system uses platform-specific methods:
+
+### NVIDIA GPUs
+
+1. **nvidia-smi** - Primary method via `--query-gpu=memory.total,name`
+2. **sysfs** - Fallback for containerized environments (`/sys/class/drm/card*/device`)
+3. **Unified Memory Detection** - Detects NVIDIA Grace Blackwell via `addressing_mode` field
+
+### AMD GPUs
+
+1. **rocm-smi** - For systems with ROCm installed
+2. **sysfs** - For systems without ROCm (`/sys/class/drm/card*/device`)
+3. **Unified APUs** - Detects Ryzen AI MAX and AI 9/7/5 series with shared memory
+
+### Apple Silicon
+
+- **system_profiler SPDisplaysDataType** - Detects M1/M2/M3/M4 series
+- Unified memory: Reports total system RAM as VRAM (same memory pool)
+
+### Intel GPUs
+
+- **sysfs** - Detects Arc GPUs via vendor ID 0x8086
+- **lspci** - Fallback identification
+
+### Windows
+
+- **PowerShell** - `Get-CimInstance Win32_VideoController`
+- **wmic** - Fallback for older Windows versions
+
+### Multi-GPU Systems
+
+For same-model multi-GPU setups:
+
+```rust
+let specs = SystemSpecs::detect();
+
+if specs.gpu_count > 1 {
+    println!("Multi-GPU detected:");
+    println!("  {} x {}", specs.gpu_count, specs.gpu_name.unwrap());
+    println!("  Per-card VRAM: {:.2} GB", specs.gpu_vram_gb.unwrap());
+    println!("  Total VRAM: {:.2} GB", specs.total_gpu_vram_gb.unwrap());
+}
+```
+
+The `total_gpu_vram_gb` field is used for fit scoring since llama.cpp and vLLM support tensor splitting across multiple GPUs.
+
+## Platform-Specific Notes
+
+### macOS
+
+On newer macOS versions (Tahoe+), `available_ram_gb` uses `vm_stat` as a fallback when sysinfo fails.
+
+### Linux Containers
+
+In containerized environments (Docker, Podman, Toolbx), GPU detection falls back to sysfs and uses `flatpak-spawn --host lspci` when needed.
+
+### WSL
+
+WSL environments are detected via `WSL_INTEROP` environment variable or `/proc/version` contents.

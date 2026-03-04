@@ -1,0 +1,407 @@
+---
+title: serve
+description: Start llmfit REST API server
+---
+
+## Synopsis
+
+```bash
+llmfit serve [OPTIONS]
+```
+
+## Description
+
+Starts an HTTP REST API server for cluster and node scheduling workflows. This allows other services to query llmfit's model compatibility analysis programmatically.
+
+The API is designed for:
+
+- Kubernetes schedulers and operators
+- Multi-node orchestration systems
+- CI/CD pipelines
+- Infrastructure-as-code tools
+- Monitoring and observability platforms
+
+## Options
+
+<ParamField path="--host" type="string" default="0.0.0.0">
+  Host interface to bind. Use "0.0.0.0" to listen on all interfaces, or "127.0.0.1" for localhost only.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8787">
+  Port to listen on.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size (e.g., "32G", "32000M", "1.5T").
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (tokens). Must be >= 1.
+</ParamField>
+
+## Usage Examples
+
+### Start Server
+
+```bash
+# Start on default port (8787)
+llmfit serve
+
+# Start on custom port
+llmfit serve --port 8080
+
+# Bind to localhost only (more secure)
+llmfit serve --host 127.0.0.1 --port 8787
+```
+
+### Override Detection
+
+```bash
+# Override detected VRAM
+llmfit serve --memory 24G
+
+# Cap context length
+llmfit serve --max-context 8192
+```
+
+### Production Deployment
+
+```bash
+# Run in background
+nohup llmfit serve --host 0.0.0.0 --port 8787 > llmfit.log 2>&1 &
+
+# With systemd
+sudo systemctl start llmfit-api
+
+# With Docker
+docker run -p 8787:8787 llmfit serve
+```
+
+## API Endpoints
+
+### Health Check
+
+```http
+GET /health
+```
+
+Returns server health status.
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "node": {
+    "name": "gpu-node-01",
+    "os": "linux"
+  }
+}
+```
+
+### System Information
+
+```http
+GET /api/v1/system
+```
+
+Returns detected hardware specifications.
+
+**Response:**
+
+```json
+{
+  "node": {
+    "name": "gpu-node-01",
+    "os": "linux"
+  },
+  "system": {
+    "total_ram_gb": 128.0,
+    "available_ram_gb": 115.5,
+    "cpu_cores": 32,
+    "cpu_name": "AMD EPYC 7763",
+    "has_gpu": true,
+    "gpu_vram_gb": 80.0,
+    "gpu_name": "NVIDIA A100 80GB PCIe",
+    "gpu_count": 1,
+    "unified_memory": false,
+    "backend": "CUDA"
+  }
+}
+```
+
+### List Compatible Models
+
+```http
+GET /api/v1/models?limit=20&min_fit=good&sort=score
+```
+
+Returns models compatible with the node's hardware.
+
+**Query Parameters:**
+
+- `limit` (integer): Maximum results to return
+- `n` (integer): Alias for `limit`
+- `perfect` (boolean): Show only perfect fits
+- `min_fit` (enum): Minimum fit level (`perfect`, `good`, `marginal`, `too_tight`)
+- `runtime` (enum): Filter by runtime (`any`, `mlx`, `llamacpp`)
+- `use_case` (enum): Filter by use case (`general`, `coding`, `reasoning`, `chat`, `multimodal`, `embedding`)
+- `provider` (string): Filter by provider name
+- `search` (string): Search query
+- `sort` (enum): Sort column (`score`, `tps`, `params`, `mem`, `ctx`, `date`, `use`)
+- `include_too_tight` (boolean): Include models that are too tight
+- `max_context` (integer): Context length cap for memory estimation
+
+**Response:**
+
+```json
+{
+  "node": {
+    "name": "gpu-node-01",
+    "os": "linux"
+  },
+  "system": { ... },
+  "total_models": 45,
+  "returned_models": 20,
+  "filters": {
+    "limit": 20,
+    "min_fit": "good",
+    "sort": "score"
+  },
+  "models": [
+    {
+      "name": "llama-3.1-405b",
+      "provider": "Meta",
+      "parameter_count": "405B",
+      "fit_level": "perfect",
+      "run_mode": "gpu",
+      "score": 98.5,
+      "estimated_tps": 18.2,
+      "runtime": "llamacpp",
+      "best_quant": "Q4_K_M",
+      "memory_required_gb": 210.5,
+      "utilization_pct": 87.3
+    }
+  ]
+}
+```
+
+### Top Recommendations
+
+```http
+GET /api/v1/models/top?limit=5&use_case=coding&min_fit=good
+```
+
+Returns top N recommended models for the node.
+
+**Query Parameters:** Same as `/api/v1/models`
+
+**Response:** Same format as `/api/v1/models`
+
+### Model by Name
+
+```http
+GET /api/v1/models/{name}
+```
+
+Returns models matching the specified name (partial match).
+
+**Path Parameters:**
+
+- `name` (string): Model name or partial name
+
+**Query Parameters:** Same as `/api/v1/models`
+
+**Response:** Same format as `/api/v1/models`
+
+## Example Output
+
+### Starting the Server
+
+```bash
+$ llmfit serve --host 0.0.0.0 --port 8787
+```
+
+```
+llmfit API server listening on http://0.0.0.0:8787
+  GET /health
+  GET /api/v1/system
+  GET /api/v1/models?limit=20&min_fit=marginal&sort=score
+  GET /api/v1/models/top?limit=5&use_case=coding&min_fit=good
+  GET /api/v1/models/<name>
+```
+
+### Testing Endpoints
+
+```bash
+# Health check
+curl http://localhost:8787/health
+
+# System info
+curl http://localhost:8787/api/v1/system
+
+# Top 10 models
+curl 'http://localhost:8787/api/v1/models?limit=10&sort=score'
+
+# Best coding models
+curl 'http://localhost:8787/api/v1/models/top?limit=5&use_case=coding'
+
+# Search for Llama models
+curl http://localhost:8787/api/v1/models/llama
+```
+
+## Integration Examples
+
+### Kubernetes Scheduler
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: model-query
+spec:
+  containers:
+  - name: query
+    image: curlimages/curl
+    command:
+    - sh
+    - -c
+    - |
+      curl -s http://llmfit-api:8787/api/v1/models/top?limit=1 | \
+      jq -r '.models[0].name'
+```
+
+### Python Client
+
+```python
+import requests
+
+class LlmfitClient:
+    def __init__(self, base_url="http://localhost:8787"):
+        self.base_url = base_url
+    
+    def get_system(self):
+        r = requests.get(f"{self.base_url}/api/v1/system")
+        return r.json()
+    
+    def get_top_models(self, limit=5, use_case=None, min_fit="good"):
+        params = {"limit": limit, "min_fit": min_fit}
+        if use_case:
+            params["use_case"] = use_case
+        r = requests.get(f"{self.base_url}/api/v1/models/top", params=params)
+        return r.json()["models"]
+    
+    def search_models(self, query):
+        r = requests.get(f"{self.base_url}/api/v1/models/{query}")
+        return r.json()["models"]
+
+# Usage
+client = LlmfitClient()
+system = client.get_system()
+print(f"Node: {system['node']['name']}")
+print(f"VRAM: {system['system']['gpu_vram_gb']} GB")
+
+top = client.get_top_models(limit=3, use_case="coding")
+for model in top:
+    print(f"{model['name']}: {model['score']} score, {model['estimated_tps']} tok/s")
+```
+
+### Bash Script
+
+```bash
+#!/bin/bash
+
+API="http://localhost:8787"
+
+# Get best model for this node
+BEST_MODEL=$(curl -s "$API/api/v1/models/top?limit=1" | jq -r '.models[0].name')
+echo "Best model for this node: $BEST_MODEL"
+
+# Check if specific model fits
+QUERY="llama-3.3-70b"
+FIT=$(curl -s "$API/api/v1/models/$QUERY" | jq -r '.models[0].fit_level')
+echo "$QUERY fit level: $FIT"
+
+# Get all perfect fits
+PERFECT=$(curl -s "$API/api/v1/models?perfect=true" | jq '.total_models')
+echo "Perfect fits available: $PERFECT"
+```
+
+### Terraform Provider
+
+```hcl
+data "http" "llmfit_system" {
+  url = "http://${var.llmfit_host}:8787/api/v1/system"
+}
+
+locals {
+  system = jsondecode(data.http.llmfit_system.body)
+  vram_gb = local.system.system.gpu_vram_gb
+}
+
+resource "kubernetes_deployment" "model_server" {
+  metadata {
+    name = "llm-server"
+    labels = {
+      node_vram = local.vram_gb
+    }
+  }
+  # ...
+}
+```
+
+## Security Considerations
+
+### Bind to Localhost
+
+For single-node use, bind to localhost:
+
+```bash
+llmfit serve --host 127.0.0.1
+```
+
+### Reverse Proxy
+
+Use nginx or similar for authentication:
+
+```nginx
+location /llmfit/ {
+    auth_basic "llmfit API";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    proxy_pass http://127.0.0.1:8787/;
+}
+```
+
+### Firewall Rules
+
+```bash
+# Allow only from specific subnet
+sudo ufw allow from 10.0.0.0/8 to any port 8787
+```
+
+### Network Policy (Kubernetes)
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llmfit-api
+spec:
+  podSelector:
+    matchLabels:
+      app: llmfit-api
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: scheduling
+    ports:
+    - port: 8787
+```
+
+## Related Commands
+
+- [system](/api/commands/system) - Show system specs
+- [fit](/api/commands/fit) - Find compatible models
+- [recommend](/api/commands/recommend) - Get recommendations
+- [info](/api/commands/info) - Model information

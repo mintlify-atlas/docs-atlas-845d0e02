@@ -1,0 +1,120 @@
+---
+title: Platform Support
+description: Supported platforms, GPU vendors, and backend detection methods
+---
+
+llmfit supports Linux, macOS, and Windows with automatic GPU detection across NVIDIA, AMD, Intel, Apple Silicon, and Ascend NPU hardware.
+
+## Support Matrix
+
+| Platform | RAM/CPU Detection | GPU Detection | Status |
+|----------|------------------|---------------|--------|
+| **Linux** | Full | NVIDIA, AMD, Intel Arc, Ascend NPU | ✓ Full support |
+| **macOS (Apple Silicon)** | Full | Unified memory via Metal | ✓ Full support |
+| **macOS (Intel)** | Full | Discrete GPU if nvidia-smi available | ✓ Supported |
+| **Windows** | Full | NVIDIA GPU via nvidia-smi | ✓ Supported |
+
+## GPU Vendor Support
+
+llmfit detects GPUs from multiple vendors and automatically identifies the optimal inference backend:
+
+| Vendor | Detection Method | VRAM Reporting | Backend |
+|--------|-----------------|----------------|----------|
+| **NVIDIA** | `nvidia-smi`, sysfs fallback | Exact dedicated VRAM | CUDA |
+| **AMD** | `rocm-smi`, sysfs fallback | Exact or estimated | ROCm / Vulkan |
+| **Intel Arc (discrete)** | sysfs `mem_info_vram_total` | Exact dedicated VRAM | SYCL (oneAPI) |
+| **Intel Arc (integrated)** | `lspci` | Shared system memory | SYCL (oneAPI) |
+| **Apple Silicon** | `system_profiler SPDisplaysDataType` | Unified memory (= system RAM) | Metal |
+| **Ascend NPU** | `npu-smi info` | HBM capacity from npu-smi | NPU (Ascend) |
+
+### Multi-GPU Support
+
+llmfit supports multi-GPU setups for same-model configurations (e.g., 2x RTX 4090):
+
+- **NVIDIA**: Multi-GPU detection via `nvidia-smi` aggregates VRAM across all cards
+- **AMD**: Per-GPU VRAM via `rocm-smi --showmeminfo vram`
+- **Ascend**: Multiple NPUs detected via `npu-smi info -l`
+
+For multi-GPU inference backends (llama.cpp, vLLM), models can be split across cards, so total VRAM is used for fit scoring.
+
+## Backend Detection
+
+llmfit automatically identifies the acceleration backend for accurate speed estimation:
+
+### GPU Backends
+
+- **CUDA**: NVIDIA GPUs detected via nvidia-smi or sysfs `/sys/class/drm` with vendor ID `0x10de`
+- **ROCm**: AMD GPUs with ROCm installed (detected via `rocm-smi`)
+- **Vulkan**: AMD GPUs without ROCm (Windows, Linux without ROCm)
+- **SYCL**: Intel Arc GPUs (discrete and integrated)
+- **Metal**: Apple Silicon unified memory GPUs
+- **Ascend**: Huawei Ascend NPUs via `npu-smi`
+
+### CPU Fallback
+
+- **CPU (ARM)**: ARM architecture or Apple CPUs (no GPU detected)
+- **CPU (x86)**: x86 architecture (no GPU detected)
+
+## Unified Memory Platforms
+
+Some platforms use unified memory architectures where GPU and CPU share the same RAM pool:
+
+### Apple Silicon
+
+All Apple Silicon Macs (M1, M2, M3, M4 series) use unified memory:
+
+- VRAM = total system RAM (shared pool)
+- Detection: `system_profiler SPDisplaysDataType` checks for "Apple M" chipset
+- No separate CPU offload path (GPU and CPU use the same memory)
+
+### AMD Unified Memory APUs
+
+Ryzen AI series APUs share system RAM between CPU and GPU:
+
+- **Ryzen AI MAX/MAX+** (Strix Halo): up to 128 GB unified
+- **Ryzen AI 9/7/5** (Strix Point, Krackan Point): configurable shared memory via BIOS
+
+Detection: CPU name contains "Ryzen AI" → GPU VRAM set to system RAM
+
+### NVIDIA Grace/DGX Spark
+
+NVIDIA Grace Blackwell unified memory SoCs (GB10, GB20):
+
+- Detection: `nvidia-smi --query-gpu=addressing_mode` returns "ATS" (Address Translation Services)
+- VRAM fallback: `/proc/meminfo` total RAM when nvidia-smi reports 0
+- System RAM used as unified memory pool
+
+## VRAM Estimation Fallback
+
+When GPU tools fail to report VRAM (broken nvidia-smi, VMs, passthrough setups), llmfit estimates VRAM from the GPU model name.
+
+Supported models include:
+
+- NVIDIA: RTX 50/40/30/20 series, GTX 16 series, datacenter (H100, H200, A100, L40, T4)
+- AMD: RX 9000/7000/6000/5000 series, Radeon 800M/8000 series, Instinct MI300X/MI250X
+- Fallback: Generic RTX → 8 GB, GTX → 4 GB
+
+### Manual Override
+
+If autodetection fails or reports incorrect values, use `--memory` to override:
+
+```bash
+llmfit --memory=32G
+llmfit --memory=24GB system
+llmfit --memory=16000M fit --perfect
+```
+
+Accepted suffixes: `G`/`GB`/`GiB` (gigabytes), `M`/`MB`/`MiB` (megabytes), `T`/`TB`/`TiB` (terabytes). Case-insensitive.
+
+## Platform-Specific Notes
+
+- **WSL (Windows Subsystem for Linux)**: Detected via `WSL_INTEROP` / `WSL_DISTRO_NAME` environment variables or `/proc/version` containing "microsoft"
+- **Containers (Toolbx, Docker)**: Sysfs fallback detects GPUs when nvidia-smi is unavailable
+- **Flatpak**: `flatpak-spawn --host lspci` used to query GPU info from host system
+- **macOS (newer versions)**: Available RAM fallback via `vm_stat` when sysinfo reports 0
+
+## Next Steps
+
+- [Linux Platform Guide](/platforms/linux)
+- [macOS Platform Guide](/platforms/macos)
+- [Windows Platform Guide](/platforms/windows)

@@ -1,0 +1,156 @@
+---
+title: llmfit
+description: Default TUI mode and global flags
+---
+
+## Synopsis
+
+```bash
+llmfit [OPTIONS]
+```
+
+## Description
+
+The `llmfit` command launches an interactive Terminal User Interface (TUI) by default. The TUI provides a visual interface for exploring LLM models that fit your system's hardware specifications.
+
+You can use global flags to customize the behavior or switch to classic CLI table output mode.
+
+## Global Flags
+
+These flags work across all subcommands:
+
+<ParamField path="--json" type="boolean" default="false">
+  Output results as JSON for tool integration. Works with all subcommands.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size (e.g., "32G", "32000M", "1.5T"). Useful when GPU memory autodetection fails.
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (tokens). Must be >= 1. Falls back to `OLLAMA_CONTEXT_LENGTH` environment variable if not set.
+</ParamField>
+
+## TUI Mode Flags
+
+These flags apply when running the default TUI:
+
+<ParamField path="--cli" type="boolean" default="false">
+  Use classic CLI table output instead of TUI. Shows the fit results in a table format and exits.
+</ParamField>
+
+<ParamField path="-p, --perfect" type="boolean" default="false">
+  Show only models that perfectly match recommended specs.
+</ParamField>
+
+<ParamField path="-n, --limit" type="integer">
+  Limit number of results displayed.
+</ParamField>
+
+<ParamField path="--sort" type="enum" default="score">
+  Sort column for CLI fit output. Options:
+  - `score` - Composite ranking score (default)
+  - `tps` - Estimated tokens/second (aliases: `tokens`, `toks`, `throughput`)
+  - `params` - Model parameter count
+  - `mem` - Memory utilization percentage (aliases: `memory`, `mem_pct`, `utilization`)
+  - `ctx` - Context window length (alias: `context`)
+  - `date` - Release date, newest first (aliases: `release`, `released`)
+  - `use` - Use-case grouping (aliases: `use_case`, `usecase`)
+</ParamField>
+
+## Usage Examples
+
+### Launch TUI (Default)
+
+```bash
+# Launch interactive TUI
+llmfit
+```
+
+### CLI Table Output
+
+```bash
+# Show fit results as a table
+llmfit --cli
+
+# Show only perfect matches
+llmfit --cli --perfect
+
+# Show top 10 models sorted by tokens/second
+llmfit --cli -n 10 --sort tps
+```
+
+### Override GPU Memory
+
+```bash
+# Override detected VRAM (useful for cloud instances)
+llmfit --memory 24G
+
+# Specify memory in different units
+llmfit --memory 24576M
+llmfit --memory 0.024T
+```
+
+### Context Length Control
+
+```bash
+# Cap context at 8K tokens for memory estimation
+llmfit --max-context 8192
+
+# Or set via environment variable
+export OLLAMA_CONTEXT_LENGTH=8192
+llmfit
+```
+
+### JSON Output
+
+```bash
+# Get JSON output for scripting
+llmfit --cli --json -n 5
+```
+
+## Example Output
+
+### TUI Mode
+
+Launching `llmfit` displays an interactive interface:
+
+```
+┌─ System ──────────────────────────────────────────────────────────────┐
+│ RAM: 64.0 GB  CPU: 16 cores (Apple M2 Max)  GPU: Metal (64.0 GB)     │
+└───────────────────────────────────────────────────────────────────────┘
+
+┌─ Filters ─────────────────────────────────────────────────────────────┐
+│ Search: [_______]  [A]ll [P]erfect [G]ood [M]arginal                  │
+└───────────────────────────────────────────────────────────────────────┘
+
+┌─ Models ──────────────────────────────────────────────────────────────┐
+│ Status  Model              Provider   Size   Score  tok/s  Runtime    │
+│ ✓ PERF  llama-3.3-70b     Meta       70B    95.2   42.5   MLX        │
+│ ✓ PERF  qwen-2.5-72b      Alibaba    72B    94.8   40.1   MLX        │
+│ ✓ GOOD  deepseek-v3       DeepSeek   671B   92.1   28.3   llama.cpp  │
+└───────────────────────────────────────────────────────────────────────┘
+
+[↑↓] Navigate  [Enter] Details  [/] Search  [q] Quit
+```
+
+### CLI Table Output
+
+Running `llmfit --cli` displays:
+
+```
+╭────────────┬───────────────────┬──────────┬──────┬───────┬──────────────┬─────────┬────────────┬─────────┬────────┬─────────╮
+│ Status     │ Model             │ Provider │ Size │ Score │ tok/s est.   │ Quant   │ Runtime    │ Mode    │ Mem %  │ Context │
+├────────────┼───────────────────┼──────────┼──────┼───────┼──────────────┼─────────┼────────────┼─────────┼────────┼─────────┤
+│ ✓ Perfect  │ llama-3.3-70b     │ Meta     │ 70B  │ 95    │ 42.5         │ 4bit    │ MLX        │ GPU     │ 68.2%  │ 128k    │
+│ ✓ Perfect  │ qwen-2.5-72b      │ Alibaba  │ 72B  │ 95    │ 40.1         │ 4bit    │ MLX        │ GPU     │ 71.5%  │ 32k     │
+│ ✓ Good     │ deepseek-v3       │ DeepSeek │ 671B │ 92    │ 28.3         │ Q4_K_M  │ llama.cpp  │ GPU     │ 89.7%  │ 128k    │
+╰────────────┴───────────────────┴──────────┴──────┴───────┴──────────────┴─────────┴────────────┴─────────┴────────┴─────────╯
+```
+
+## Related Commands
+
+- [system](/api/commands/system) - Show system hardware specifications
+- [fit](/api/commands/fit) - Find models that fit your system
+- [recommend](/api/commands/recommend) - Get top model recommendations
+- [search](/api/commands/search) - Search for specific models

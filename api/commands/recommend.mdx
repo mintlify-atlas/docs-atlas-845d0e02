@@ -1,0 +1,333 @@
+---
+title: recommend
+description: Get top model recommendations for your hardware
+---
+
+## Synopsis
+
+```bash
+llmfit recommend [OPTIONS]
+```
+
+## Description
+
+Provides curated recommendations of the best models for your system based on fit quality, use case, runtime, and other filters. This is optimized for programmatic use and defaults to JSON output.
+
+## Options
+
+<ParamField path="-n, --limit" type="integer" default="5">
+  Number of recommendations to return.
+</ParamField>
+
+<ParamField path="--use-case" type="enum">
+  Filter by use case category. Options:
+  - `general` - General-purpose models
+  - `coding` (alias: `code`) - Code generation and analysis
+  - `reasoning` (alias: `reason`) - Complex reasoning tasks
+  - `chat` - Conversational models
+  - `multimodal` (alias: `vision`) - Vision and multimodal
+  - `embedding` (alias: `embed`) - Text embeddings
+</ParamField>
+
+<ParamField path="--min-fit" type="enum" default="marginal">
+  Filter by minimum fit level. Options:
+  - `perfect` - Only perfect fits
+  - `good` - Good or better
+  - `marginal` - Marginal or better (default)
+</ParamField>
+
+<ParamField path="--runtime" type="enum" default="any">
+  Filter by inference runtime. Options:
+  - `any` - All runtimes (default)
+  - `mlx` - MLX only (Apple Silicon)
+  - `llamacpp` (aliases: `llama.cpp`, `llama_cpp`) - llama.cpp only
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="true">
+  Output as JSON. Default is true for this command.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size (e.g., "32G", "32000M", "1.5T").
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (tokens). Must be >= 1.
+</ParamField>
+
+## Usage Examples
+
+### Basic Recommendations
+
+```bash
+# Get top 5 recommendations (default)
+llmfit recommend
+
+# Get top 10 recommendations
+llmfit recommend -n 10
+```
+
+### Filter by Use Case
+
+```bash
+# Best coding models
+llmfit recommend --use-case coding -n 3
+
+# Best reasoning models
+llmfit recommend --use-case reasoning -n 5
+
+# Best chat models
+llmfit recommend --use-case chat
+
+# Multimodal models
+llmfit recommend --use-case multimodal
+```
+
+### Filter by Fit Level
+
+```bash
+# Only perfect fits
+llmfit recommend --min-fit perfect -n 10
+
+# Good or better
+llmfit recommend --min-fit good
+
+# Include marginal fits (default)
+llmfit recommend --min-fit marginal
+```
+
+### Filter by Runtime
+
+```bash
+# MLX models only (Apple Silicon)
+llmfit recommend --runtime mlx -n 5
+
+# llama.cpp models only
+llmfit recommend --runtime llamacpp -n 5
+```
+
+### Combined Filters
+
+```bash
+# Top 3 perfect-fit coding models
+llmfit recommend --use-case coding --min-fit perfect -n 3
+
+# Top 5 good MLX models
+llmfit recommend --runtime mlx --min-fit good -n 5
+
+# Best reasoning models for 24GB VRAM
+llmfit recommend --use-case reasoning --memory 24G
+```
+
+### Human-Readable Output
+
+```bash
+# Disable JSON output
+llmfit recommend --json false -n 10
+```
+
+## Example Output
+
+### JSON Format (Default)
+
+```bash
+$ llmfit recommend -n 3
+```
+
+```json
+{
+  "system": {
+    "total_ram_gb": 64.0,
+    "available_ram_gb": 58.24,
+    "cpu_cores": 16,
+    "cpu_name": "Apple M2 Max",
+    "has_gpu": true,
+    "gpu_vram_gb": 64.0,
+    "unified_memory": true,
+    "backend": "Metal"
+  },
+  "models": [
+    {
+      "name": "llama-3.3-70b",
+      "provider": "Meta",
+      "parameter_count": "70B",
+      "params_b": 70.0,
+      "context_length": 131072,
+      "use_case": "general",
+      "category": "General",
+      "release_date": "2024-12-06",
+      "fit_level": "perfect",
+      "run_mode": "gpu",
+      "score": 95.2,
+      "estimated_tps": 42.5,
+      "runtime": "MLX",
+      "best_quant": "4bit",
+      "memory_required_gb": 43.68,
+      "utilization_pct": 68.2
+    },
+    {
+      "name": "qwen-2.5-72b",
+      "provider": "Alibaba",
+      "parameter_count": "72B",
+      "params_b": 72.0,
+      "context_length": 32768,
+      "use_case": "general",
+      "category": "General",
+      "release_date": "2024-09-19",
+      "fit_level": "perfect",
+      "run_mode": "gpu",
+      "score": 94.8,
+      "estimated_tps": 40.1,
+      "runtime": "MLX",
+      "best_quant": "4bit",
+      "memory_required_gb": 45.79,
+      "utilization_pct": 71.5
+    },
+    {
+      "name": "deepseek-v3",
+      "provider": "DeepSeek",
+      "parameter_count": "671B",
+      "params_b": 671.0,
+      "context_length": 131072,
+      "use_case": "reasoning",
+      "category": "Reasoning",
+      "release_date": "2024-12-26",
+      "fit_level": "good",
+      "run_mode": "moe_offload",
+      "score": 92.1,
+      "estimated_tps": 28.3,
+      "runtime": "llamacpp",
+      "best_quant": "Q4_K_M",
+      "memory_required_gb": 57.42,
+      "utilization_pct": 89.7
+    }
+  ]
+}
+```
+
+### Filtered by Use Case
+
+```bash
+$ llmfit recommend --use-case coding -n 3
+```
+
+```json
+{
+  "system": { ... },
+  "models": [
+    {
+      "name": "qwen-2.5-coder-32b",
+      "provider": "Alibaba",
+      "parameter_count": "32B",
+      "use_case": "coding",
+      "category": "Coding",
+      "fit_level": "perfect",
+      "score": 91.2,
+      "estimated_tps": 68.2
+    },
+    {
+      "name": "codestral-25.01",
+      "provider": "Mistral",
+      "parameter_count": "22B",
+      "use_case": "coding",
+      "category": "Coding",
+      "fit_level": "perfect",
+      "score": 89.5,
+      "estimated_tps": 85.1
+    },
+    {
+      "name": "deepseek-coder-v2",
+      "provider": "DeepSeek",
+      "parameter_count": "236B",
+      "use_case": "coding",
+      "category": "Coding",
+      "fit_level": "good",
+      "score": 87.3,
+      "estimated_tps": 32.7
+    }
+  ]
+}
+```
+
+### Human-Readable Format
+
+```bash
+$ llmfit recommend --json false -n 5
+```
+
+```
+╭─ System Hardware ──────────────────────────────────────────╮
+│  RAM:  64.0 GB total (58.2 GB available)                  │
+│  CPU:  16 cores (Apple M2 Max)                            │
+│  GPU:  Metal - Apple M2 Max (64.0 GB, unified memory)     │
+╰────────────────────────────────────────────────────────────╯
+
+╭─────────────┬──────────────────────┬───────────┬──────┬───────┬──────────────┬─────────┬────────────┬─────────┬────────┬─────────╮
+│ Status      │ Model                │ Provider  │ Size │ Score │ tok/s est.   │ Quant   │ Runtime    │ Mode    │ Mem %  │ Context │
+├─────────────┼──────────────────────┼───────────┼──────┼───────┼──────────────┼─────────┼────────────┼─────────┼────────┼─────────┤
+│ ✓ Perfect   │ llama-3.3-70b        │ Meta      │ 70B  │ 95    │ 42.5         │ 4bit    │ MLX        │ GPU     │ 68.2%  │ 128k    │
+│ ✓ Perfect   │ qwen-2.5-72b         │ Alibaba   │ 72B  │ 95    │ 40.1         │ 4bit    │ MLX        │ GPU     │ 71.5%  │ 32k     │
+│ ✓ Good      │ deepseek-v3          │ DeepSeek  │ 671B │ 92    │ 28.3         │ Q4_K_M  │ llama.cpp  │ GPU     │ 89.7%  │ 128k    │
+│ ✓ Perfect   │ qwen-2.5-coder-32b   │ Alibaba   │ 32B  │ 91    │ 68.2         │ 4bit    │ MLX        │ GPU     │ 52.3%  │ 128k    │
+│ ✓ Perfect   │ llama-3.1-70b        │ Meta      │ 70B  │ 91    │ 42.5         │ 4bit    │ MLX        │ GPU     │ 68.2%  │ 128k    │
+╰─────────────┴──────────────────────┴───────────┴──────┴───────┴──────────────┴─────────┴────────────┴─────────┴────────┴─────────╯
+```
+
+## Filtering Behavior
+
+### Backend Compatibility
+
+- MLX-only models are automatically hidden on non-Apple Silicon systems
+- CUDA/ROCm models require appropriate GPU drivers
+
+### Fit Level Filtering
+
+- `--min-fit perfect`: Only models with Perfect fit level
+- `--min-fit good`: Perfect and Good fit levels
+- `--min-fit marginal`: Perfect, Good, and Marginal (default)
+- Too Tight models are excluded by default
+
+### Use Case Categories
+
+- **General**: Versatile models for various tasks
+- **Coding**: Code generation, analysis, completion
+- **Reasoning**: Complex logical and mathematical reasoning
+- **Chat**: Conversational and instruction-following
+- **Multimodal**: Vision and image understanding
+- **Embedding**: Text embedding generation
+
+## Use Cases
+
+### CI/CD Integration
+
+```bash
+#!/bin/bash
+# Select best model for deployment
+BEST_MODEL=$(llmfit recommend -n 1 --min-fit perfect | jq -r '.models[0].name')
+echo "Deploying $BEST_MODEL"
+```
+
+### Auto-Configuration
+
+```bash
+# Get best coding model for development environment
+CODER=$(llmfit recommend --use-case coding -n 1 | jq -r '.models[0].name')
+ollama pull $CODER
+```
+
+### Hardware Selection
+
+```bash
+# Test different VRAM configurations
+for vram in 24 32 48 64 80; do
+  echo "== ${vram}GB VRAM =="
+  llmfit recommend --memory "${vram}G" --min-fit perfect -n 3 | jq '.models[].name'
+done
+```
+
+## Related Commands
+
+- [fit](/api/commands/fit) - See all compatible models
+- [info](/api/commands/info) - Get detailed model information
+- [system](/api/commands/system) - Verify detected hardware
+- [search](/api/commands/search) - Search for specific models

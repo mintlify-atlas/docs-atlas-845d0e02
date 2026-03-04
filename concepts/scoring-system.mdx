@@ -1,0 +1,461 @@
+---
+title: Scoring System
+description: Multi-dimensional scoring with use-case-specific weights
+---
+
+llmfit evaluates each model across four independent dimensions (0-100 each), then combines them into a weighted composite score. Different use cases prioritize different aspects of model performance.
+
+## Four Scoring Dimensions
+
+<CardGroup cols={2}>
+<Card title="Quality" icon="star">
+**What it measures:**
+- Parameter count (more params = higher quality)
+- Model family reputation (Llama, Qwen, DeepSeek)
+- Quantization quality penalty
+- Task-specific alignment
+
+**Range:** 0-100
+</Card>
+
+<Card title="Speed" icon="gauge-high">
+**What it measures:**
+- Estimated tokens per second
+- Normalized against use-case target
+- Based on memory bandwidth or backend constants
+
+**Range:** 0-100
+</Card>
+
+<Card title="Fit" icon="memory">
+**What it measures:**
+- Memory utilization efficiency
+- Sweet spot: 50-80% of available memory
+- Penalties for under-utilization or tightness
+
+**Range:** 0-100
+</Card>
+
+<Card title="Context" icon="book-open">
+**What it measures:**
+- Context window capability
+- Compared to use-case target
+- Bonus for exceeding requirements
+
+**Range:** 0-100
+</Card>
+</CardGroup>
+
+## 1. Quality Score
+
+The quality score combines multiple factors to estimate model capability:
+
+### Base Quality by Parameter Count
+
+```rust
+let base = if params < 1.0 {
+    30.0  // Sub-billion: edge/mobile models
+} else if params < 3.0 {
+    45.0  // 1-3B: lightweight models
+} else if params < 7.0 {
+    60.0  // 3-7B: consumer-grade
+} else if params < 10.0 {
+    75.0  // 7-10B: strong general purpose
+} else if params < 20.0 {
+    82.0  // 10-20B: high-quality
+} else if params < 40.0 {
+    89.0  // 20-40B: datacenter-class
+} else {
+    95.0  // 40B+: frontier models
+};
+```
+
+### Family Reputation Bumps
+
+Certain model families receive quality bonuses based on benchmark performance:
+
+| Family | Bump | Reasoning |
+|--------|------|----------|
+| **DeepSeek** | +3.0 | Strong reasoning, code generation |
+| **Qwen** | +2.0 | Multilingual, high benchmark scores |
+| **Llama** | +2.0 | Well-tested, open community |
+| **Mistral/Mixtral** | +1.0 | Efficient MoE architectures |
+| **Gemma** | +1.0 | Google research quality |
+| **StarCoder** | +1.0 | Specialized code models |
+
+### Quantization Penalty
+
+Lower quantization reduces quality:
+
+```rust
+let q_penalty = match quant {
+    "F16" | "BF16" => 0.0,   // Full precision
+    "Q8_0" => 0.0,          // 8-bit (negligible loss)
+    "Q6_K" => -1.0,
+    "Q5_K_M" => -2.0,
+    "Q4_K_M" => -5.0,       // Standard quantization
+    "Q3_K_M" => -8.0,
+    "Q2_K" => -12.0,        // Aggressive compression
+    "mlx-4bit" => -4.0,
+    "mlx-8bit" => 0.0,
+    _ => -5.0,
+};
+```
+
+<Note>
+Q4_K_M is the sweet spot: minimal quality loss with 4× memory savings compared to F16.
+</Note>
+
+### Task Alignment Bonus
+
+**Coding (+6.0):**
+- Models with "code", "starcoder", or "wizard" in name
+- Examples: CodeLlama, Qwen2.5-Coder, StarCoder2
+
+**Reasoning (+5.0):**
+- Models with ≥13B params
+- Chain-of-thought architectures
+
+**Multimodal (+6.0):**
+- Models with "vision" in name or use case
+- Examples: Llama 3.2 Vision, Qwen2.5-VL
+
+### Final Quality Formula
+
+```rust
+let quality = (base + family_bump + q_penalty + task_bump).clamp(0.0, 100.0);
+```
+
+<Info>
+**Example:** Qwen2.5-Coder-14B-Instruct at Q4_K_M
+- Base (10-20B): 82.0
+- Family (Qwen): +2.0
+- Quantization (Q4_K_M): -5.0
+- Task (coding): +6.0
+- **Total: 85.0**
+</Info>
+
+## 2. Speed Score
+
+Speed estimation uses a physics-based approach when GPU bandwidth is known, falling back to per-backend constants otherwise.
+
+### Bandwidth-Based Estimation (Preferred)
+
+Token generation is **memory-bandwidth-bound**. Each token requires reading the full model weights once:
+
+```rust
+let bandwidth_gbps = gpu_memory_bandwidth_gbps(gpu_name)?;
+let bytes_per_param = quant_bytes_per_param(quant);
+let model_gb = params * bytes_per_param;
+
+let efficiency = 0.55;  // Accounts for overhead
+let raw_tps = (bandwidth_gbps / model_gb) * efficiency;
+```
+
+**Efficiency factor (0.55) accounts for:**
+- Kernel launch overhead
+- KV-cache memory reads
+- Memory controller saturation
+
+<Tabs>
+  <Tab title="NVIDIA Example">
+    **RTX 4090** (1008 GB/s)
+    
+    ```
+    Model: Llama-3.1-8B-Instruct @ Q4_K_M
+    Params: 8B
+    Bytes per param: 0.5 (Q4_K_M)
+    Model size: 8 × 0.5 = 4 GB
+    
+    Raw TPS = (1008 GB/s ÷ 4 GB) × 0.55
+            = 252 × 0.55
+            = 138.6 tok/s
+    
+    Measured: ~130-140 tok/s ✓
+    ```
+  </Tab>
+  <Tab title="Apple Silicon Example">
+    **M1 Max** (400 GB/s)
+    
+    ```
+    Model: Llama-3.1-8B-Instruct @ Q4_K_M
+    Params: 8B
+    Bytes per param: 0.5
+    Model size: 4 GB
+    
+    Raw TPS = (400 GB/s ÷ 4 GB) × 0.55
+            = 100 × 0.55
+            = 55 tok/s
+    
+    With MLX runtime multiplier (1.56×):
+    = 55 × 1.56 = 85.8 tok/s
+    
+    Measured: ~80-90 tok/s ✓
+    ```
+  </Tab>
+</Tabs>
+
+### Fallback: Backend Constants
+
+For unrecognized GPUs or synthetic entries from `--memory` override:
+
+```rust
+let k = match (backend, runtime) {
+    (Metal, Mlx) => 250.0,
+    (Metal, LlamaCpp) => 160.0,
+    (Cuda, _) => 220.0,
+    (Rocm, _) => 180.0,
+    (Vulkan, _) => 150.0,
+    (Sycl, _) => 100.0,
+    (CpuArm, _) => 90.0,
+    (CpuX86, _) => 70.0,
+    (Ascend, _) => 390.0,
+};
+
+let base_tps = k / params;
+base_tps *= quant_speed_multiplier(quant);
+```
+
+### Run Mode Penalties
+
+```rust
+match run_mode {
+    RunMode::Gpu => {},              // Full speed
+    RunMode::MoeOffload => tps *= 0.8,  // Expert switching overhead
+    RunMode::CpuOffload => tps *= 0.5,  // RAM bandwidth bottleneck
+    RunMode::CpuOnly => tps *= 0.3,     // Worst case
+}
+```
+
+### Quantization Speed Multiplier
+
+Lower quantization = less data to read = faster inference:
+
+```rust
+let multiplier = match quant {
+    "F16" | "BF16" => 0.6,  // Slowest (most data)
+    "Q8_0" => 0.8,
+    "Q6_K" => 0.95,
+    "Q5_K_M" => 1.0,        // Baseline
+    "Q4_K_M" => 1.15,       // +15% faster
+    "Q3_K_M" => 1.25,       // +25% faster
+    "Q2_K" => 1.35,         // +35% faster
+    "mlx-4bit" => 1.15,
+    "mlx-8bit" => 0.85,
+    _ => 1.0,
+};
+```
+
+### Speed Score Normalization
+
+Speed is normalized against a use-case-specific target:
+
+```rust
+let target = match use_case {
+    General | Coding | Multimodal | Chat => 40.0,  // Interactive target
+    Reasoning => 25.0,                              // Lower for CoT models
+    Embedding => 200.0,                             // Batch processing
+};
+
+let speed_score = ((tps / target) * 100.0).clamp(0.0, 100.0);
+```
+
+<Check>
+A model hitting the target TPS gets a perfect 100. Exceeding the target is capped at 100 (no extra credit).
+</Check>
+
+## 3. Fit Score
+
+Measures how efficiently the model uses available memory. The sweet spot is 50-80% utilization:
+
+```rust
+let ratio = mem_required / mem_available;
+
+if ratio <= 0.5 {
+    // Under-utilizing: still good but not optimal
+    60.0 + (ratio / 0.5) * 40.0  // 60-100 linear
+} else if ratio <= 0.8 {
+    100.0  // Sweet spot: perfect utilization
+} else if ratio <= 0.9 {
+    70.0   // Getting tight
+} else if ratio < 1.0 {
+    50.0   // Very tight
+} else {
+    0.0    // Doesn't fit
+}
+```
+
+<CardGroup cols={3}>
+<Card title="20% Utilization" icon="battery-quarter">
+**Score: 76**
+
+Under-utilizing hardware. Room for larger/better models.
+</Card>
+
+<Card title="65% Utilization" icon="battery-three-quarters">
+**Score: 100**
+
+Sweet spot. Efficient use with comfortable headroom.
+</Card>
+
+<Card title="92% Utilization" icon="battery-full">
+**Score: 50**
+
+Very tight. Risk of OOM errors or swapping.
+</Card>
+</CardGroup>
+
+## 4. Context Score
+
+Compares the model's context window to use-case expectations:
+
+```rust
+let target = match use_case {
+    General | Chat => 4096,
+    Coding | Reasoning => 8192,  // Longer for complex tasks
+    Multimodal => 4096,
+    Embedding => 512,            // Short sequences
+};
+
+if model.context_length >= target {
+    100.0  // Meets or exceeds target
+} else if model.context_length >= target / 2 {
+    70.0   // Reasonable but limited
+} else {
+    30.0   // Too short for use case
+}
+```
+
+<Info>
+**Example:** A coding model with 4K context vs 8K target gets a 70 score—usable but not ideal for large codebases.
+</Info>
+
+## Weighted Composite Score
+
+The final score is a weighted combination based on use case priorities:
+
+```rust
+let (wq, ws, wf, wc) = match use_case {
+    General   => (0.45, 0.30, 0.15, 0.10),
+    Coding    => (0.50, 0.20, 0.15, 0.15),
+    Reasoning => (0.55, 0.15, 0.15, 0.15),
+    Chat      => (0.40, 0.35, 0.15, 0.10),
+    Multimodal => (0.50, 0.20, 0.15, 0.15),
+    Embedding => (0.30, 0.40, 0.20, 0.10),
+};
+
+let composite = quality * wq + speed * ws + fit * wf + context * wc;
+```
+
+<AccordionGroup>
+<Accordion title="General (Balanced)">
+**Weights:** Quality 45%, Speed 30%, Fit 15%, Context 10%
+
+Balanced scoring for everyday use. Prioritizes model quality with decent speed.
+</Accordion>
+
+<Accordion title="Coding">
+**Weights:** Quality 50%, Speed 20%, Fit 15%, Context 15%
+
+Higher context weight (15% vs 10%) for large codebases. Quality is paramount for correct suggestions.
+</Accordion>
+
+<Accordion title="Reasoning">
+**Weights:** Quality 55%, Speed 15%, Fit 15%, Context 15%
+
+Quality dominates (55%). Chain-of-thought models are naturally slower, so speed weight is reduced.
+</Accordion>
+
+<Accordion title="Chat">
+**Weights:** Quality 40%, Speed 35%, Fit 15%, Context 10%
+
+Speed is critical (35%) for interactive conversations. Quality matters less than responsiveness.
+</Accordion>
+
+<Accordion title="Multimodal">
+**Weights:** Quality 50%, Speed 20%, Fit 15%, Context 15%
+
+Similar to coding. High quality for accurate vision understanding, reasonable context for multi-turn interactions.
+</Accordion>
+
+<Accordion title="Embedding">
+**Weights:** Quality 30%, Speed 40%, Fit 20%, Context 10%
+
+Speed is king (40%) for batch processing. Fit matters more (20%) since embeddings process many documents.
+</Accordion>
+</AccordionGroup>
+
+## Complete Scoring Example
+
+Let's score **Qwen2.5-Coder-14B-Instruct** on an RTX 3090 (24 GB VRAM, 936 GB/s bandwidth) for **coding**:
+
+### Step 1: Path Selection
+- VRAM available: 24 GB
+- Model at Q4_K_M: ~8.2 GB
+- **Run mode:** GPU (fits comfortably)
+
+### Step 2: Individual Scores
+
+**Quality (0-100):**
+```
+Base (10-20B): 82.0
+Family (Qwen): +2.0
+Quantization (Q4_K_M): -5.0
+Task alignment (coding): +6.0
+= 85.0
+```
+
+**Speed (0-100):**
+```
+Bandwidth: 936 GB/s
+Model size: 14B × 0.5 (Q4_K_M) = 7 GB
+Raw TPS = (936 ÷ 7) × 0.55 = 73.5 tok/s
+Target (coding): 40 tok/s
+Score = (73.5 / 40) × 100 = 100 (capped)
+```
+
+**Fit (0-100):**
+```
+Required: 8.2 GB
+Available: 24 GB
+Ratio: 34% (under-utilizing)
+= 60 + (0.34 / 0.5) × 40 = 87.2
+```
+
+**Context (0-100):**
+```
+Model: 32K tokens
+Target (coding): 8192
+Meets target: 100.0
+```
+
+### Step 3: Weighted Composite
+
+```
+Coding weights: Q=50%, S=20%, F=15%, C=15%
+
+Composite = 85.0×0.50 + 100×0.20 + 87.2×0.15 + 100×0.15
+          = 42.5 + 20.0 + 13.1 + 15.0
+          = 90.6
+```
+
+**Final score: 90.6 / 100**
+
+<Success>
+This model is an excellent fit for coding on this hardware: strong quality (85), blazing speed (100), efficient utilization (87.2), and ample context (100).
+</Success>
+
+## Score Interpretation
+
+| Score Range | Interpretation |
+|-------------|----------------|
+| **90-100** | Excellent fit for use case and hardware |
+| **80-89** | Very good, minor compromises |
+| **70-79** | Good, some trade-offs |
+| **60-69** | Acceptable, noticeable limitations |
+| **50-59** | Marginal, significant compromises |
+| **< 50** | Poor fit, consider alternatives |
+
+<Warning>
+**TooTight models always rank last** regardless of score. A model that doesn't fit is unusable, no matter how good its theoretical score.
+</Warning>

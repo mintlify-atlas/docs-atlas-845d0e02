@@ -1,0 +1,445 @@
+---
+title: Provider Integration
+description: Ollama, llama.cpp, and MLX integration for model detection and downloads
+---
+
+llmfit integrates with multiple local runtime providers to detect installed models and download new ones directly from the TUI or CLI. Providers are detected automatically on startup.
+
+## Supported Providers
+
+| Provider | Platforms | Detection | Download | Runtime |
+|----------|-----------|-----------|----------|----------|
+| **Ollama** | Linux, macOS, Windows | API (`/api/tags`) | API (`/api/pull`) | Ollama serve |
+| **llama.cpp** | Linux, macOS, Windows | Local cache | HuggingFace GGUF | llama-cli, llama-server |
+| **MLX** | macOS (Apple Silicon) | Local cache | HuggingFace mlx-community | mlx_lm |
+
+## Ollama Integration
+
+[Ollama](https://ollama.com) is a daemon-based runtime for running LLMs locally. llmfit connects to the Ollama API to detect installed models and download new ones.
+
+### Requirements
+
+- **Ollama must be installed and running**: `ollama serve` or the Ollama desktop app
+- llmfit connects to `http://localhost:11434` by default (Ollama's default API port)
+- No configuration needed — if Ollama is running, llmfit detects it automatically
+
+### Install Detection
+
+On startup, llmfit queries `GET /api/tags` to list installed Ollama models. Detected models show a green `✓` in the "Inst" column of the TUI, and the system bar displays `Ollama: ✓ (N installed)`.
+
+**API endpoint:**
+```
+GET http://localhost:11434/api/tags
+```
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "name": "llama3.1:8b",
+      "model": "llama3.1:8b",
+      "size": 4661210658,
+      "digest": "...",
+      "modified_at": "2025-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+llmfit maps Ollama tags (e.g., `llama3.1:8b`) to HuggingFace model names (e.g., `meta-llama/Llama-3.1-8B-Instruct`) using an internal mapping table.
+
+### Model Name Mapping
+
+llmfit's database uses HuggingFace model names, while Ollama uses its own naming scheme. llmfit maintains an accurate mapping between the two.
+
+**Examples:**
+
+| HuggingFace Name | Ollama Tag |
+|------------------|------------|
+| `meta-llama/Llama-3.1-8B-Instruct` | `llama3.1:8b` |
+| `Qwen/Qwen2.5-Coder-14B-Instruct` | `qwen2.5-coder:14b` |
+| `mistralai/Mistral-7B-Instruct-v0.3` | `mistral:7b-instruct` |
+| `deepseek-ai/DeepSeek-R1-Distill-Llama-8B` | `deepseek-r1:8b` |
+
+Each mapping is exact — `qwen2.5-coder:14b` maps to the Coder model, not the base `qwen2.5:14b`.
+
+### Download Functionality
+
+Press `d` in the TUI (or use the `download` subcommand) to download a model via Ollama. llmfit sends `POST /api/pull` to Ollama with the appropriate tag.
+
+**API endpoint:**
+```
+POST http://localhost:11434/api/pull
+```
+
+**Request:**
+```json
+{
+  "name": "llama3.1:8b",
+  "stream": true
+}
+```
+
+**Response (streaming):**
+Ollama returns a stream of JSON objects with progress updates:
+
+```json
+{"status": "pulling manifest"}
+{"status": "pulling layer", "digest": "sha256:...", "total": 4661210658, "completed": 1000000}
+{"status": "pulling layer", "digest": "sha256:...", "total": 4661210658, "completed": 2000000}
+...
+{"status": "success"}
+```
+
+llmfit displays an animated progress indicator in the TUI's "Inst" column during download.
+
+### Remote Ollama Instances
+
+To connect to Ollama running on a different machine or port, set the `OLLAMA_HOST` environment variable:
+
+```bash
+# Connect to Ollama on a specific IP and port
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit
+
+# Connect via hostname
+OLLAMA_HOST="http://ollama-server:666" llmfit
+
+# Works with all TUI and CLI commands
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit --cli
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit fit --perfect -n 5
+```
+
+**Use cases:**
+- Running llmfit on one machine while Ollama serves from another (e.g., GPU server + laptop client)
+- Connecting to Ollama in Docker containers with custom ports
+- Using Ollama behind reverse proxies or load balancers
+
+### Ollama Binary Detection
+
+llmfit also detects if the `ollama` CLI binary is available in `PATH` (even if the daemon is not running). This allows download operations to start the daemon automatically if needed.
+
+**Detection method:**
+```bash
+which ollama
+```
+
+If `ollama` binary is found but the daemon is not running, the TUI shows `Ollama: ✗` but still allows downloads (which will prompt the daemon to start).
+
+---
+
+## llama.cpp Integration
+
+[llama.cpp](https://github.com/ggml-org/llama.cpp) is a C++ inference engine for GGUF quantized models. llmfit integrates with llama.cpp by downloading GGUF files from HuggingFace and detecting local cache.
+
+### Requirements
+
+- `llama-cli` or `llama-server` available in `PATH` (for runtime detection)
+- Network access to HuggingFace for GGUF downloads
+
+**Install llama.cpp:**
+
+```bash
+# macOS (Homebrew)
+brew install llama.cpp
+
+# From source
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+cmake -B build && cmake --build build --config Release
+```
+
+### Local Cache Detection
+
+llmfit scans the llama.cpp model cache directory for GGUF files:
+
+**Cache directory:**
+```
+~/.cache/llama.cpp/models/
+```
+
+Detected GGUF files are matched against known model names. The "Inst" column in the TUI shows `✓` if a matching GGUF is found.
+
+### Model Name Mapping
+
+llmfit maps HuggingFace model names to known GGUF repos using heuristic fallbacks and a curated list.
+
+**Example mappings:**
+
+| HuggingFace Name | GGUF Repo |
+|------------------|----------|
+| `meta-llama/Llama-3.1-8B-Instruct` | `bartowski/Llama-3.1-8B-Instruct-GGUF` |
+| `Qwen/Qwen2.5-Coder-7B-Instruct` | `unsloth/Qwen2.5-Coder-7B-Instruct-GGUF` |
+| `mistralai/Mistral-7B-Instruct-v0.3` | `bartowski/Mistral-7B-Instruct-v0.3-GGUF` |
+
+**Fallback heuristics:**
+
+If no known mapping exists, llmfit tries:
+1. `unsloth/<model-name>-GGUF`
+2. `bartowski/<model-name>-GGUF`
+3. Original repo with `-GGUF` suffix
+
+These providers (unsloth, bartowski) are known for high-quality GGUF quantizations.
+
+### Download Functionality
+
+Press `d` in the TUI to download a GGUF model. llmfit:
+
+1. Resolves the GGUF repo from the model name
+2. Lists available GGUF files in the repo
+3. Selects the best quantization that fits your hardware (or uses `--quant` override)
+4. Downloads the file to `~/.cache/llama.cpp/models/`
+5. Shows progress with percentage and transfer speed
+
+**CLI download:**
+
+```bash
+# Auto-select quantization based on hardware
+llmfit download "llama 8b"
+
+# Specify quantization
+llmfit download "llama 8b" --quant Q4_K_M
+
+# Set memory budget
+llmfit download "mistral 7b" --budget 12
+
+# List available files
+llmfit download "bartowski/Mistral-7B-Instruct-GGUF" --list
+```
+
+**Quantization selection:**
+
+If no `--quant` is specified, llmfit selects the highest-quality quantization that fits in available memory (GPU VRAM or system RAM):
+
+1. Parse all GGUF filenames in the repo
+2. Extract quantization (e.g., Q4_K_M, Q8_0) and file size
+3. Rank by quality: Q8_0 > Q6_K > Q5_K_M > Q5_K_S > Q4_K_M > Q4_K_S > Q3_K_M > Q2_K
+4. Select the highest-quality quant where `file_size <= memory_budget`
+
+If nothing fits, downloads the smallest available quantization.
+
+### Running GGUF Models
+
+Use the `run` subcommand to launch a downloaded model:
+
+```bash
+# Interactive chat
+llmfit run "llama-3.1-8b"
+
+# OpenAI-compatible API server
+llmfit run "mistral-7b" --server --port 8080
+
+# Custom context size and GPU layers
+llmfit run "llama-3.1-8b" --ctx-size 8192 --ngl 35
+```
+
+**Flags:**
+
+<ParamField path="--server" type="boolean">
+  Run as API server instead of interactive chat (uses `llama-server` instead of `llama-cli`)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8080">
+  Port for API server (only with `--server`)
+</ParamField>
+
+<ParamField path="--ngl, -g" type="integer" default="-1">
+  Number of GPU layers to offload. `-1` means all layers (full GPU).
+</ParamField>
+
+<ParamField path="--ctx-size, -c" type="integer" default="4096">
+  Context size in tokens
+</ParamField>
+
+---
+
+## MLX Integration
+
+[MLX](https://github.com/ml-explore/mlx) is Apple's machine learning framework optimized for Apple Silicon (M1/M2/M3/M4). llmfit integrates with MLX via the `mlx_lm` package.
+
+### Requirements
+
+- **Apple Silicon Mac** (M1, M2, M3, M4, or later)
+- `mlx_lm` Python package installed (optional for runtime)
+
+**Install mlx_lm:**
+
+```bash
+pip install mlx-lm
+```
+
+### Local Cache Detection
+
+llmfit scans the MLX model cache directory:
+
+**Cache directory:**
+```
+~/.cache/huggingface/hub/models--mlx-community--*
+```
+
+MLX models are typically stored in the `mlx-community` namespace on HuggingFace. llmfit detects these models and marks them as installed.
+
+### Model Name Mapping
+
+llmfit maps HuggingFace model names to `mlx-community` equivalents:
+
+**Example mappings:**
+
+| HuggingFace Name | MLX Community Repo |
+|------------------|--------------------|
+| `Qwen/Qwen3-4B-MLX-4bit` | `mlx-community/Qwen3-4B-MLX-4bit` |
+| `meta-llama/Llama-3.1-8B-Instruct` | `mlx-community/Llama-3.1-8B-Instruct-4bit` |
+
+**Heuristic:**
+
+If a model name contains "MLX" or ends with a quantization suffix (e.g., `-4bit`, `-8bit`), llmfit treats it as MLX-native and maps it to `mlx-community/<model-name>`.
+
+### Download Functionality
+
+Press `d` in the TUI on an MLX model to download via `mlx_lm`. llmfit uses the `mlx_lm.utils` module to pull models:
+
+```python
+from mlx_lm import load
+
+model, tokenizer = load("mlx-community/Qwen3-4B-MLX-4bit")
+```
+
+The TUI shows animated progress during download.
+
+### MLX-Only Models
+
+Some models in the database are MLX-only (quantized specifically for MLX). llmfit hides these models on non-Apple Silicon systems to avoid confusion.
+
+**Detection:**
+
+Models are marked MLX-only if:
+- Model name contains "MLX"
+- Quantization format is `mlx-4bit`, `mlx-8bit`, etc.
+- No GGUF sources are available
+
+**Behavior:**
+
+- **On Apple Silicon**: MLX-only models are visible and ranked normally
+- **On other systems**: MLX-only models are hidden (counted in "backend hidden" in system bar)
+
+---
+
+## Install Detection Indicators
+
+The "Inst" column in the TUI shows install status:
+
+| Indicator | Meaning |
+|-----------|----------|
+| `✓` | Installed in at least one provider (Ollama, MLX, or llama.cpp) |
+| `O` | Available via Ollama only |
+| `L` | Available via llama.cpp only |
+| `OL` | Available via both Ollama and llama.cpp |
+| `…` | Checking availability (background probe) |
+| `—` | Not available for download |
+| Spinner + bar | Currently downloading |
+
+**Install-first sorting:**
+
+Press `i` in the TUI to toggle installed-first sorting. When enabled, models detected in any runtime provider appear at the top of the list (regardless of score).
+
+---
+
+## Provider Detection on Startup
+
+On startup, llmfit probes all providers in parallel:
+
+1. **Ollama**: HTTP GET to `http://localhost:11434/api/tags` (or `$OLLAMA_HOST/api/tags`)
+2. **llama.cpp**: Check for `llama-cli` or `llama-server` in `PATH`, scan `~/.cache/llama.cpp/models/`
+3. **MLX**: Check for `mlx_lm` in Python path, scan `~/.cache/huggingface/hub/models--mlx-community--*`
+
+**System bar status:**
+
+- `Ollama: ✓ (N installed)` — Ollama daemon running, N models installed
+- `Ollama: ✗` — Ollama not running or not reachable
+- `MLX: ✓ (N installed)` — MLX runtime available, N models cached
+- `MLX: (N cached)` — MLX not installed, but N models cached locally
+- `MLX: ✗` — MLX not available
+- `llama.cpp: ✓ (N models)` — llama-cli or llama-server in PATH, N GGUFs cached
+- `llama.cpp: (N cached)` — No binary in PATH, but N GGUFs cached
+- `llama.cpp: ✗` — No runtime or cache detected
+
+---
+
+## Download Provider Selection
+
+When multiple providers are available for a model, pressing `d` opens a provider picker popup:
+
+1. Use `↑`/`↓` or `j`/`k` to navigate
+2. Press `Enter` or `Space` to select
+3. Press `Esc` or `q` to cancel
+
+**Provider priority (automatic selection):**
+
+1. **MLX** — If model is MLX-native and MLX is available
+2. **Ollama** — If model has Ollama mapping and Ollama is running
+3. **llama.cpp** — If model has GGUF sources and llama.cpp is available
+
+If multiple providers are available at the same priority level (e.g., both Ollama and llama.cpp), the picker popup is shown.
+
+---
+
+## Refresh Installed Models
+
+Press `r` in the TUI to refresh installed models from all providers. This re-queries:
+
+- Ollama API (`/api/tags`)
+- llama.cpp cache directory
+- MLX cache directory
+
+Use this after manually installing models outside of llmfit (e.g., `ollama pull llama3.1:8b` or `mlx_lm.load(...)`).
+
+---
+
+## Environment Variables
+
+<ParamField path="OLLAMA_HOST" type="string" default="http://localhost:11434">
+  Ollama API URL. Set to connect to remote Ollama instances.
+  
+  Example: `OLLAMA_HOST="http://192.168.1.100:11434" llmfit`
+</ParamField>
+
+<ParamField path="OLLAMA_CONTEXT_LENGTH" type="integer">
+  Context length fallback for memory estimation when `--max-context` is not set.
+  
+  Example: `OLLAMA_CONTEXT_LENGTH=8192 llmfit`
+</ParamField>
+
+---
+
+## Provider-Specific Notes
+
+### Ollama
+
+- **Requires daemon**: Ollama must be running for downloads and install detection
+- **Model format**: Native Ollama format (not GGUF)
+- **Storage**: Models stored in Ollama's own cache (not exposed to llmfit)
+- **Pull speed**: Depends on Ollama's download speed and disk I/O
+
+### llama.cpp
+
+- **No daemon**: Downloads and runs models directly via CLI tools
+- **Model format**: GGUF (quantized safetensors)
+- **Storage**: `~/.cache/llama.cpp/models/`
+- **Pull speed**: Direct HuggingFace download, typically faster than Ollama
+- **Flexibility**: Full control over quantization, context size, and GPU layers
+
+### MLX
+
+- **Apple Silicon only**: Requires M1, M2, M3, M4, or later
+- **Model format**: MLX-native (safetensors + config)
+- **Storage**: `~/.cache/huggingface/hub/models--mlx-community--*`
+- **Pull speed**: Direct HuggingFace download via `mlx_lm`
+- **Performance**: Optimized for Apple Silicon unified memory
+
+<Tip>
+  For cross-provider compatibility, prefer GGUF models (llama.cpp). GGUF files work on any platform and can be run with llama.cpp, Ollama (via `ollama create`), or other GGUF-compatible runtimes.
+</Tip>
+
+<Note>
+  Provider detection is non-blocking. If a provider is unavailable, llmfit continues with reduced functionality (no downloads for that provider).
+</Note>

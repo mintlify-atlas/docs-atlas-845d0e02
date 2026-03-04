@@ -1,0 +1,389 @@
+---
+title: 'API Endpoints'
+description: 'Complete endpoint reference for llmfit serve mode'
+---
+
+## GET /health
+
+**Liveness probe** for health checks and monitoring.
+
+### Request
+
+```bash
+curl http://127.0.0.1:8787/health
+```
+
+### Response
+
+```json
+{
+  "status": "ok",
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  }
+}
+```
+
+### Fields
+
+<ResponseField name="status" type="string" required>
+  Always returns `"ok"` when server is running
+</ResponseField>
+
+<ResponseField name="node" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      Node hostname (from `$HOSTNAME` env var, defaults to `"unknown-node"`)
+    </ResponseField>
+    <ResponseField name="os" type="string">
+      Operating system: `"linux"`, `"macos"`, or `"windows"`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Use Cases
+
+- Kubernetes liveness/readiness probes
+- Load balancer health checks
+- Service discovery validation
+
+---
+
+## GET /api/v1/system
+
+**Hardware detection endpoint** returning node identity and detected system specifications.
+
+### Request
+
+```bash
+curl http://127.0.0.1:8787/api/v1/system
+```
+
+### Response
+
+```json
+{
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  },
+  "system": {
+    "total_ram_gb": 62.23,
+    "available_ram_gb": 41.08,
+    "cpu_cores": 14,
+    "cpu_name": "Intel(R) Core(TM) Ultra 7 165U",
+    "has_gpu": true,
+    "gpu_vram_gb": 24.0,
+    "gpu_name": "NVIDIA RTX 4090",
+    "gpu_count": 1,
+    "unified_memory": false,
+    "backend": "CUDA",
+    "gpus": [
+      {
+        "name": "NVIDIA RTX 4090",
+        "vram_gb": 24.0,
+        "backend": "CUDA",
+        "count": 1,
+        "unified_memory": false
+      }
+    ]
+  }
+}
+```
+
+### Fields
+
+See [Response Schemas - System Object](/api/rest/response-schemas#system-object) for complete field documentation.
+
+### Use Cases
+
+- Cluster inventory and hardware discovery
+- Validating hardware requirements before placement
+- Displaying node capabilities in dashboards
+
+---
+
+## GET /api/v1/models
+
+**Filtered model listing** with scoring and fit analysis for the current node.
+
+### Request
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models?limit=20&min_fit=marginal&sort=score"
+```
+
+### Query Parameters
+
+All parameters are optional. See [Query Parameters](/api/rest/query-parameters) for details.
+
+- `limit` - Maximum number of models to return
+- `perfect` - Return only perfect fits
+- `min_fit` - Minimum fit level (perfect|good|marginal|too_tight)
+- `runtime` - Filter by inference runtime (any|mlx|llamacpp)
+- `use_case` - Filter by use case (coding|reasoning|chat|multimodal|embedding|general)
+- `provider` - Filter by provider substring
+- `search` - Free-text search across name/provider/params
+- `sort` - Sort column (score|tps|params|mem|ctx|date|use_case)
+- `include_too_tight` - Include unrunnable models (default: true)
+- `max_context` - Context length limit for memory estimation
+
+### Response
+
+```json
+{
+  "node": {
+    "name": "worker-1",
+    "os": "linux"
+  },
+  "system": {
+    "total_ram_gb": 62.23,
+    "available_ram_gb": 41.08,
+    "cpu_cores": 14,
+    "cpu_name": "Intel(R) Core(TM) Ultra 7 165U",
+    "has_gpu": false,
+    "gpu_vram_gb": null,
+    "gpu_name": null,
+    "gpu_count": 0,
+    "unified_memory": false,
+    "backend": "CPU (x86)",
+    "gpus": []
+  },
+  "total_models": 23,
+  "returned_models": 10,
+  "filters": {
+    "limit": 20,
+    "perfect": null,
+    "min_fit": "marginal",
+    "runtime": null,
+    "use_case": null,
+    "provider": null,
+    "search": null,
+    "sort": "score",
+    "max_context": null,
+    "include_too_tight": true,
+    "top_only": false
+  },
+  "models": [
+    {
+      "name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "provider": "Qwen",
+      "parameter_count": "7B",
+      "params_b": 7.0,
+      "context_length": 32768,
+      "use_case": "Coding",
+      "category": "Coding",
+      "release_date": "2025-03-14",
+      "is_moe": false,
+      "fit_level": "good",
+      "fit_label": "Good",
+      "run_mode": "gpu",
+      "run_mode_label": "GPU",
+      "score": 86.5,
+      "score_components": {
+        "quality": 87.0,
+        "speed": 81.2,
+        "fit": 90.1,
+        "context": 88.0
+      },
+      "estimated_tps": 42.5,
+      "runtime": "llamacpp",
+      "runtime_label": "llama.cpp",
+      "best_quant": "Q5_K_M",
+      "memory_required_gb": 5.8,
+      "memory_available_gb": 12.0,
+      "utilization_pct": 48.3,
+      "notes": [],
+      "gguf_sources": []
+    }
+  ]
+}
+```
+
+### Fields
+
+See [Response Schemas](/api/rest/response-schemas) for complete field documentation.
+
+### Use Cases
+
+- Browsing all models compatible with a node
+- Filtering by specific requirements (use case, runtime, fit level)
+- Custom sorting and ranking strategies
+
+---
+
+## GET /api/v1/models/top
+
+**Top runnable models** optimized for scheduling decisions. This is the **key endpoint for cluster schedulers**.
+
+### Request
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models/top?limit=5&min_fit=good&use_case=coding"
+```
+
+### Query Parameters
+
+Same as `/api/v1/models` with different defaults:
+
+- `limit` defaults to **5** (instead of unlimited)
+- `include_too_tight` defaults to **false** (excludes unrunnable models)
+
+See [Query Parameters](/api/rest/query-parameters) for all options.
+
+### Response
+
+Identical structure to `/api/v1/models`, but optimized for scheduling:
+
+```json
+{
+  "node": { "name": "worker-1", "os": "linux" },
+  "system": { /* hardware specs */ },
+  "total_models": 15,
+  "returned_models": 5,
+  "filters": {
+    "limit": 5,
+    "min_fit": "good",
+    "use_case": "coding",
+    "include_too_tight": false,
+    "top_only": true
+  },
+  "models": [ /* top 5 runnable models */ ]
+}
+```
+
+### Use Cases
+
+- **Scheduler polling:** Query each node for top K runnable models
+- **Fast placement decisions:** Get best options without full model list
+- **Workload-specific routing:** Filter by use case for targeted placement
+
+### Recommended Scheduler Pattern
+
+```bash
+# Poll each node in cluster
+for node in worker-{1..10}; do
+  curl "http://${node}:8787/api/v1/models/top?limit=5&min_fit=good" \
+    | jq '{node: .node.name, top_model: .models[0].name, score: .models[0].score}'
+done
+```
+
+---
+
+## GET /api/v1/models/{name}
+
+**Model search by name** - path-constrained text search.
+
+### Request
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models/Mistral?runtime=any"
+```
+
+### Path Parameters
+
+<ParamField path="name" type="string" required>
+  Model name search string (substring match, case-insensitive)
+</ParamField>
+
+### Query Parameters
+
+All query parameters from `/api/v1/models` are supported. The `{name}` path parameter is automatically added as a `search` filter.
+
+### Response
+
+Identical structure to `/api/v1/models`, filtered by name:
+
+```json
+{
+  "node": { "name": "worker-1", "os": "linux" },
+  "system": { /* hardware specs */ },
+  "total_models": 3,
+  "returned_models": 3,
+  "filters": {
+    "search": "Mistral",
+    "limit": 20,
+    "include_too_tight": true
+  },
+  "models": [
+    { "name": "mistralai/Mistral-7B-Instruct-v0.3", /* ... */ },
+    { "name": "mistralai/Mixtral-8x7B-Instruct-v0.1", /* ... */ },
+    { "name": "mistralai/Mistral-Small-Instruct-2501", /* ... */ }
+  ]
+}
+```
+
+### Use Cases
+
+- Client-side drilldown after selecting a model family
+- Validating if a specific model runs on a node
+- Finding all variants of a model (e.g., all "Qwen" models)
+
+---
+
+## Error Responses
+
+### HTTP 400 - Bad Request
+
+Returned for invalid query parameter values:
+
+```json
+{
+  "error": "invalid min_fit value: use perfect|good|marginal|too_tight"
+}
+```
+
+Common validation errors:
+- Invalid `min_fit` value
+- Invalid `runtime` value
+- Invalid `use_case` value
+- Invalid `sort` column
+
+### HTTP 500 - Internal Server Error
+
+Returned for unexpected server errors:
+
+```json
+{
+  "error": "server error: <details>"
+}
+```
+
+---
+
+## Client Integration Best Practices
+
+### 1. Polling Pattern for Schedulers
+
+For each node agent:
+
+1. Call `/health` to verify availability
+2. Call `/api/v1/system` to get hardware specs
+3. Call `/api/v1/models/top?limit=K&min_fit=good` for scheduling candidates
+4. Attach node metadata and forward to central scheduler
+
+### 2. Conservative Placement Defaults
+
+For production placement:
+
+```
+min_fit=good
+include_too_tight=false
+sort=score
+limit=5..20
+```
+
+### 3. Per-Workload Targeting
+
+Examples:
+- Coding workloads: `use_case=coding`
+- Embedding workloads: `use_case=embedding`
+- Runtime-constrained fleet: `runtime=llamacpp`
+
+### 4. Forward-Compatible Parsing
+
+Treat unknown fields as forward-compatible additions:
+- Parse only required fields your application depends on
+- Ignore unknown fields to support future API versions
+- Validate critical fields exist before accessing

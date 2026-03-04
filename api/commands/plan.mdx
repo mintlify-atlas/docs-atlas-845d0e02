@@ -1,0 +1,358 @@
+---
+title: plan
+description: Plan hardware requirements for a specific model
+---
+
+## Synopsis
+
+```bash
+llmfit plan <MODEL> --context <TOKENS> [OPTIONS]
+```
+
+## Description
+
+Estimates hardware requirements for running a specific model with a given configuration. This is useful for:
+
+- Planning hardware upgrades
+- Sizing cloud instances
+- Understanding resource needs before deployment
+- Evaluating different quantization options
+
+## Arguments
+
+<ParamField path="model" type="string" required>
+  Model name or unique partial name to analyze.
+</ParamField>
+
+## Required Options
+
+<ParamField path="--context" type="integer" required>
+  Context length for estimation in tokens. Must be >= 1.
+</ParamField>
+
+## Optional Flags
+
+<ParamField path="--quant" type="string">
+  Quantization override (e.g., "Q4_K_M", "Q8_0", "mlx-4bit"). If not specified, uses the model's default quantization.
+</ParamField>
+
+<ParamField path="--target-tps" type="float">
+  Target decode speed in tokens/second. Shows what hardware is needed to achieve this throughput.
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="false">
+  Output plan as JSON instead of formatted text.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size for current system comparison (e.g., "32G").
+</ParamField>
+
+## Usage Examples
+
+### Basic Planning
+
+```bash
+# Plan for Llama 3.3 70B with 8K context
+llmfit plan llama-3.3-70b --context 8192
+
+# Plan for QwQ with 32K context
+llmfit plan qwq-32b --context 32768
+```
+
+### Custom Quantization
+
+```bash
+# Plan with Q8 quantization (higher quality)
+llmfit plan llama-3.1-70b --context 8192 --quant Q8_0
+
+# Plan with Q4_K_M quantization (more efficient)
+llmfit plan deepseek-v3 --context 16384 --quant Q4_K_M
+
+# Plan with MLX 4-bit
+llmfit plan qwen-2.5-72b --context 8192 --quant mlx-4bit
+```
+
+### Target Throughput
+
+```bash
+# Plan for 50 tok/s target speed
+llmfit plan llama-3.3-70b --context 8192 --target-tps 50
+
+# Plan for 100 tok/s (may require more powerful hardware)
+llmfit plan phi-4 --context 4096 --target-tps 100
+```
+
+### JSON Output
+
+```bash
+# Get plan as JSON
+llmfit plan llama-3.3-70b --context 8192 --json
+
+# Process with jq
+llmfit plan qwen-2.5-72b --context 16384 --json | jq '.minimum'
+```
+
+### Compare Configurations
+
+```bash
+# Compare different context lengths
+llmfit plan llama-3.3-70b --context 4096
+llmfit plan llama-3.3-70b --context 8192
+llmfit plan llama-3.3-70b --context 16384
+
+# Compare quantizations
+llmfit plan llama-3.1-70b --context 8192 --quant Q4_K_M
+llmfit plan llama-3.1-70b --context 8192 --quant Q8_0
+```
+
+## Example Output
+
+### Human-Readable Format
+
+```bash
+$ llmfit plan llama-3.3-70b --context 8192
+```
+
+```
+╭─ System Hardware ──────────────────────────────────────────╮
+│  RAM:  64.0 GB total (58.2 GB available)                  │
+│  CPU:  16 cores (Apple M2 Max)                            │
+│  GPU:  Metal - Apple M2 Max (64.0 GB, unified memory)     │
+╰────────────────────────────────────────────────────────────╯
+
+=== Hardware Planning Estimate ===
+Model: llama-3.3-70b
+Provider: Meta
+Context: 8192
+Quantization: 4bit
+Note: Estimates based on model size and quantization. Real usage may vary.
+
+Minimum Hardware:
+  VRAM: 38.2 GB
+  RAM: 46.5 GB
+  CPU Cores: 8
+
+Recommended Hardware:
+  VRAM: 48.0 GB
+  RAM: 64.0 GB
+  CPU Cores: 12
+
+Feasible Run Paths:
+  GPU: Yes
+    min: VRAM=38.2 GB RAM=16.0 GB cores=8
+    est speed: 42.5 tok/s
+  CPU Offload: Yes
+    min: VRAM=24.0 GB RAM=32.0 GB cores=12
+    est speed: 28.3 tok/s
+  CPU Only: Yes
+    min: VRAM=n/a RAM=46.5 GB cores=16
+    est speed: 8.2 tok/s
+
+Upgrade Deltas:
+  None required for the selected target.
+```
+
+### With Target TPS
+
+```bash
+$ llmfit plan llama-3.3-70b --context 8192 --target-tps 50
+```
+
+```
+=== Hardware Planning Estimate ===
+Model: llama-3.3-70b
+Provider: Meta
+Context: 8192
+Quantization: 4bit
+Target TPS: 50.0 tok/s
+Note: Estimates based on model size and quantization. Real usage may vary.
+
+Minimum Hardware:
+  VRAM: 42.0 GB
+  RAM: 52.0 GB
+  CPU Cores: 12
+
+Recommended Hardware:
+  VRAM: 56.0 GB
+  RAM: 72.0 GB
+  CPU Cores: 16
+
+Feasible Run Paths:
+  GPU: Yes
+    min: VRAM=42.0 GB RAM=16.0 GB cores=12
+    est speed: 50.0 tok/s
+  CPU Offload: No
+    Insufficient VRAM for target throughput
+  CPU Only: No
+    CPU-only mode cannot achieve target throughput
+
+Upgrade Deltas:
+  Add 8 GB VRAM to reach 50 tok/s on GPU
+  Add 4 CPU cores for better CPU offload performance
+```
+
+### JSON Format
+
+```bash
+$ llmfit plan llama-3.3-70b --context 8192 --json
+```
+
+```json
+{
+  "model_name": "llama-3.3-70b",
+  "provider": "Meta",
+  "context": 8192,
+  "quantization": "4bit",
+  "target_tps": null,
+  "estimate_notice": "Estimates based on model size and quantization. Real usage may vary.",
+  "minimum": {
+    "vram_gb": 38.2,
+    "ram_gb": 46.5,
+    "cpu_cores": 8
+  },
+  "recommended": {
+    "vram_gb": 48.0,
+    "ram_gb": 64.0,
+    "cpu_cores": 12
+  },
+  "run_paths": [
+    {
+      "path": "gpu",
+      "feasible": true,
+      "minimum": {
+        "vram_gb": 38.2,
+        "ram_gb": 16.0,
+        "cpu_cores": 8
+      },
+      "estimated_tps": 42.5
+    },
+    {
+      "path": "cpu_offload",
+      "feasible": true,
+      "minimum": {
+        "vram_gb": 24.0,
+        "ram_gb": 32.0,
+        "cpu_cores": 12
+      },
+      "estimated_tps": 28.3
+    },
+    {
+      "path": "cpu_only",
+      "feasible": true,
+      "minimum": {
+        "vram_gb": null,
+        "ram_gb": 46.5,
+        "cpu_cores": 16
+      },
+      "estimated_tps": 8.2
+    }
+  ],
+  "upgrade_deltas": []
+}
+```
+
+### MoE Model Planning
+
+```bash
+$ llmfit plan deepseek-v3 --context 16384
+```
+
+```
+=== Hardware Planning Estimate ===
+Model: deepseek-v3
+Provider: DeepSeek
+Context: 16384
+Quantization: Q4_K_M
+Note: MoE model with sparse activation. Only active experts loaded in VRAM.
+
+Minimum Hardware:
+  VRAM: 62.5 GB
+  RAM: 120.0 GB (for inactive experts)
+  CPU Cores: 16
+
+Recommended Hardware:
+  VRAM: 80.0 GB
+  RAM: 128.0 GB
+  CPU Cores: 24
+
+Feasible Run Paths:
+  MoE Offload: Yes
+    min: VRAM=62.5 GB RAM=120.0 GB cores=16
+    est speed: 28.3 tok/s
+    note: Active experts on GPU, inactive in RAM
+  GPU: No
+    Full model (350 GB) exceeds available VRAM
+  CPU Only: Yes
+    min: VRAM=n/a RAM=420.2 GB cores=32
+    est speed: 3.2 tok/s
+
+Upgrade Deltas:
+  Add 56 GB RAM to comfortably fit inactive experts
+  Add 8 CPU cores for better offload performance
+```
+
+## Planning Use Cases
+
+### Cloud Instance Sizing
+
+```bash
+# Determine instance requirements
+llmfit plan llama-3.3-70b --context 8192 --json | jq '.recommended'
+
+# Compare with available instance types
+llmfit plan qwen-2.5-72b --context 16384
+```
+
+### Hardware Upgrade Planning
+
+```bash
+# Current system with 24GB VRAM
+llmfit plan llama-3.1-70b --context 8192 --memory 24G
+
+# See upgrade recommendations
+llmfit plan llama-3.1-405b --context 8192
+```
+
+### Development Environment Setup
+
+```bash
+# Plan for local development
+llmfit plan phi-4 --context 4096
+llmfit plan codestral-25.01 --context 16384
+
+# Plan for production deployment
+llmfit plan deepseek-v3 --context 32768 --target-tps 50
+```
+
+## Estimation Methodology
+
+### Memory Calculation
+
+- **Model Weights**: `params × bytes_per_param (quantization-dependent)`
+- **KV Cache**: `context × layers × hidden_dim × 2 (K+V) × bytes_per_element`
+- **Activations**: ~10-15% overhead for intermediate activations
+- **OS/Runtime**: Additional 2-4GB for system processes
+
+### Quantization Impact
+
+| Quantization | Bytes/Param | Quality | Speed |
+|--------------|-------------|---------|-------|
+| Q4_K_M | 0.5 | Good | Fast |
+| Q5_K_M | 0.625 | Better | Moderate |
+| Q8_0 | 1.0 | High | Slower |
+| 4bit (MLX) | 0.5 | Good | Fast |
+
+### Run Paths
+
+- **GPU**: Full model on GPU (best performance)
+- **MoE Offload**: Active experts on GPU, inactive in RAM
+- **CPU Offload**: Some layers on CPU, rest on GPU
+- **CPU Only**: Full model on CPU (slowest)
+
+## Related Commands
+
+- [info](/api/commands/info) - Detailed model information
+- [fit](/api/commands/fit) - Check current system compatibility
+- [system](/api/commands/system) - View current hardware specs
+- [recommend](/api/commands/recommend) - Get model recommendations

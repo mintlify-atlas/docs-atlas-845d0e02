@@ -1,0 +1,139 @@
+---
+title: system
+description: Show system hardware specifications
+---
+
+## Synopsis
+
+```bash
+llmfit system [OPTIONS]
+```
+
+## Description
+
+Detects and displays your system's hardware specifications including RAM, CPU, GPU, and available backends for LLM inference.
+
+This command is useful for verifying what llmfit has detected about your system and troubleshooting detection issues.
+
+## Options
+
+<ParamField path="--json" type="boolean" default="false">
+  Output system specs as JSON instead of formatted text.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size (e.g., "32G", "32000M", "1.5T"). Useful when autodetection fails or for testing different configurations.
+</ParamField>
+
+## Usage Examples
+
+### Basic System Info
+
+```bash
+# Display system specifications
+llmfit system
+```
+
+### JSON Output
+
+```bash
+# Get system specs as JSON
+llmfit system --json
+```
+
+### Override GPU Memory
+
+```bash
+# Test with different VRAM sizes
+llmfit system --memory 24G
+llmfit system --memory 80G
+```
+
+## Example Output
+
+### Human-Readable Format
+
+```
+╭─ System Hardware ──────────────────────────────────────────╮
+│                                                            │
+│  RAM:  64.0 GB total (58.2 GB available)                  │
+│  CPU:  16 cores (Apple M2 Max)                            │
+│  GPU:  Metal                                               │
+│        - Apple M2 Max                                      │
+│        - 64.0 GB VRAM                                      │
+│        - Unified Memory                                    │
+│                                                            │
+╰────────────────────────────────────────────────────────────╯
+```
+
+### JSON Format
+
+```json
+{
+  "system": {
+    "total_ram_gb": 64.0,
+    "available_ram_gb": 58.24,
+    "cpu_cores": 16,
+    "cpu_name": "Apple M2 Max",
+    "has_gpu": true,
+    "gpu_vram_gb": 64.0,
+    "gpu_name": "Apple M2 Max",
+    "gpu_count": 1,
+    "unified_memory": true,
+    "backend": "Metal",
+    "gpus": [
+      {
+        "name": "Apple M2 Max",
+        "vram_gb": 64.0,
+        "backend": "Metal",
+        "count": 1,
+        "unified_memory": true
+      }
+    ]
+  }
+}
+```
+
+## System Detection
+
+llmfit automatically detects:
+
+- **RAM**: Total and available system memory via `sysinfo` crate
+- **CPU**: Core count and model name
+- **GPU**: NVIDIA (via `nvidia-smi`), AMD (via `rocm-smi`), Apple Silicon (via `system_profiler`)
+- **Backend**: CUDA, ROCm, Metal, or CPU-only
+- **Unified Memory**: Apple Silicon systems where VRAM = RAM
+
+## Platform Notes
+
+### NVIDIA
+
+Requires `nvidia-smi` in PATH. Detects CUDA-capable GPUs and VRAM.
+
+```bash
+# Verify nvidia-smi works
+nvidia-smi
+```
+
+### AMD
+
+Requires `rocm-smi` in PATH. Detects ROCm-capable GPUs.
+
+```bash
+# Verify rocm-smi works
+rocm-smi
+```
+
+### Apple Silicon
+
+Uses `system_profiler` to detect Metal backend. VRAM equals system RAM due to unified memory architecture.
+
+### CPU-Only
+
+If no GPU is detected, llmfit will use CPU inference mode for model recommendations.
+
+## Related Commands
+
+- [llmfit](/api/commands/llmfit) - Launch TUI with detected specs
+- [fit](/api/commands/fit) - Find models matching your system
+- [plan](/api/commands/plan) - Plan hardware requirements for a model

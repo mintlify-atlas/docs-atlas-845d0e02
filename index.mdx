@@ -1,97 +1,291 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: llmfit Documentation
+description: Right-size LLM models to your system's RAM, CPU, and GPU
+mode: custom
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#0f1117] via-[#1a1d27] to-[#242838] dark:from-[#0f1117] dark:via-[#1a1d27] dark:to-[#242838] py-20">
+  <div className="max-w-7xl mx-auto px-6 lg:px-8">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-100 dark:text-gray-100 mb-6">
+          Right-size LLM models to your hardware
+        </h1>
+        <p className="text-lg sm:text-xl text-gray-300 dark:text-gray-300 mb-8 max-w-2xl">
+          Terminal tool that detects your system specs, scores hundreds of models across quality, speed, fit, and context, and tells you which ones will actually run well on your machine.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-lg bg-[#eabfac] text-gray-900 font-semibold hover:bg-[#d4a996] transition-colors no-underline"
+          >
+            Get Started
+            <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a
+            href="/api/commands/llmfit"
+            className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-[#27272a] bg-white/10 dark:bg-white/10 text-gray-100 dark:text-gray-100 font-semibold hover:bg-white/20 dark:hover:bg-white/20 hover:border-[#eabfac] dark:hover:border-[#eabfac] transition-colors no-underline"
+          >
+            Command Reference
+          </a>
+        </div>
+      </div>
+      <div className="lg:col-span-5">
+        <div className="rounded-2xl border border-[#27272a] dark:border-[#27272a] bg-[#1a1d27] dark:bg-[#1a1d27] p-6 shadow-2xl">
+          <div className="text-sm font-mono text-gray-300 dark:text-gray-300 space-y-2">
+            <div className="text-[#c0c093] dark:text-[#c0c093]">$ llmfit</div>
+            <div className="text-gray-400 dark:text-gray-400 text-xs mt-4">
+              System: 62GB RAM | 14 cores | NVIDIA RTX 4090 (24GB VRAM)
+            </div>
+            <div className="mt-4 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-400 dark:text-gray-400">Qwen/Qwen2.5-Coder-7B</span>
+                <span className="text-[#eabfac] dark:text-[#eabfac]">Score: 94.5</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400 dark:text-gray-400">Mistral-7B-Instruct</span>
+                <span className="text-[#eabfac] dark:text-[#eabfac]">Score: 92.1</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400 dark:text-gray-400">Llama-3.1-8B-Instruct</span>
+                <span className="text-[#eabfac] dark:text-[#eabfac]">Score: 91.8</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Quick Start</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Get llmfit running on your system in under a minute
+    </p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Install llmfit">
+      Install using your preferred package manager:
 
-## Make it yours
+      <CodeGroup>
+      ```bash macOS
+      brew install llmfit
+      ```
 
-Design a docs site that looks great and empowers your users.
+      ```bash Windows
+      scoop install llmfit
+      ```
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      ```bash Linux
+      curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+      ```
 
-## Create beautiful pages
+      ```bash From source
+      git clone https://github.com/AlexsJones/llmfit.git
+      cd llmfit
+      cargo build --release
+      ```
+      </CodeGroup>
+    </Step>
 
-Everything you need to create world-class documentation.
+    <Step title="Run the interactive TUI">
+      Launch llmfit to see which models fit your hardware:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+      ```bash
+      llmfit
+      ```
 
-## Need inspiration?
+      The TUI displays your system specs at the top and ranks all models by fit score. Use arrow keys or `j`/`k` to navigate, `/` to search, and `q` to quit.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+      <Accordion title="Example TUI output">
+        Your system specs (CPU, RAM, GPU name, VRAM, backend) appear at the top. Models are listed in a scrollable table sorted by composite score, with columns for:
+        - **Score**: Composite score (0-100) across quality, speed, fit, and context
+        - **TPS**: Estimated tokens per second
+        - **Quant**: Best quantization for your hardware (Q8_0 to Q2_K)
+        - **Mode**: Run mode (GPU, CPU+GPU, CPU, MoE)
+        - **Mem**: Memory usage percentage
+        - **Context**: Maximum context length
+      </Accordion>
+    </Step>
+
+    <Step title="Filter and download models">
+      Use keyboard shortcuts to filter results:
+      - Press `f` to cycle fit filters (All, Runnable, Perfect, Good, Marginal)
+      - Press `/` to search by name, provider, or use case
+      - Press `d` on a selected model to download it via Ollama or llama.cpp
+
+      ```bash
+      # Or use CLI mode for scripting
+      llmfit fit --perfect -n 5
+      llmfit recommend --json --use-case coding --limit 3
+      ```
+
+      <Note>
+        Models marked with a green ✓ in the **Inst** column are already installed via Ollama, llama.cpp, or MLX.
+      </Note>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Explore by Topic</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">
+      Deep dive into llmfit's features and capabilities
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card title="Core Concepts" icon="lightbulb" href="/concepts/how-it-works">
+      Understand hardware detection, scoring algorithms, and fit analysis
+    </Card>
+    <Card title="TUI Mode" icon="terminal" href="/guides/tui-mode">
+      Master the interactive terminal UI with keybindings and themes
+    </Card>
+    <Card title="CLI Mode" icon="code" href="/guides/cli-mode">
+      Use llmfit in scripts with subcommands and JSON output
+    </Card>
+    <Card title="REST API" icon="server" href="/guides/rest-api">
+      Run llmfit as a node-level API for cluster scheduling
+    </Card>
+    <Card title="Provider Integration" icon="plug" href="/guides/provider-integration">
+      Connect with Ollama, llama.cpp, and MLX for model downloads
+    </Card>
+    <Card title="Platform Support" icon="laptop" href="/platforms/overview">
+      GPU detection for NVIDIA, AMD, Intel Arc, and Apple Silicon
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Key Features</h2>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27]">
+      <div className="w-12 h-12 rounded-lg bg-[#eabfac]/10 dark:bg-[#eabfac]/10 flex items-center justify-center mb-4">
+        <svg className="w-6 h-6 text-[#eabfac] dark:text-[#eabfac]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+        </svg>
+      </div>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Multi-GPU Detection</h3>
+      <p className="text-gray-600 dark:text-gray-400">
+        Detects NVIDIA, AMD ROCm, Intel Arc, Apple Silicon, and Ascend NPUs with aggregated VRAM reporting
+      </p>
+    </div>
+
+    <div className="p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27]">
+      <div className="w-12 h-12 rounded-lg bg-[#c0c093]/10 dark:bg-[#c0c093]/10 flex items-center justify-center mb-4">
+        <svg className="w-6 h-6 text-[#c0c093] dark:text-[#c0c093]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Dynamic Quantization</h3>
+      <p className="text-gray-600 dark:text-gray-400">
+        Automatically selects the best quantization (Q8_0 to Q2_K) that fits your available memory
+      </p>
+    </div>
+
+    <div className="p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27]">
+      <div className="w-12 h-12 rounded-lg bg-[#796a7b]/10 dark:bg-[#796a7b]/10 flex items-center justify-center mb-4">
+        <svg className="w-6 h-6 text-[#796a7b] dark:text-[#796a7b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      </div>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Multi-Dimensional Scoring</h3>
+      <p className="text-gray-600 dark:text-gray-400">
+        Ranks models across quality, speed, memory fit, and context window with use-case-specific weights
+      </p>
+    </div>
+
+    <div className="p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27]">
+      <div className="w-12 h-12 rounded-lg bg-[#eabfac]/10 dark:bg-[#eabfac]/10 flex items-center justify-center mb-4">
+        <svg className="w-6 h-6 text-[#eabfac] dark:text-[#eabfac]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      </div>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">MoE Architecture Support</h3>
+      <p className="text-gray-600 dark:text-gray-400">
+        Optimizes Mixture-of-Experts models like Mixtral and DeepSeek with expert offloading
+      </p>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Command Reference</h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400">
+      Explore all available CLI commands and REST API endpoints
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card title="llmfit" icon="rectangle-terminal" href="/api/commands/llmfit">
+      Launch interactive TUI
+    </Card>
+    <Card title="system" icon="microchip" href="/api/commands/system">
+      Show hardware specs
+    </Card>
+    <Card title="fit" icon="filter" href="/api/commands/fit">
+      Filter by fit level
+    </Card>
+    <Card title="search" icon="magnifying-glass" href="/api/commands/search">
+      Search model database
+    </Card>
+    <Card title="recommend" icon="star" href="/api/commands/recommend">
+      Get top recommendations
+    </Card>
+    <Card title="plan" icon="calculator" href="/api/commands/plan">
+      Estimate hardware needs
+    </Card>
+    <Card title="serve" icon="server" href="/api/commands/serve">
+      Start REST API server
+    </Card>
+    <Card title="REST API" icon="globe" href="/api/rest/overview">
+      HTTP endpoints
+    </Card>
+    <Card title="Core Library" icon="book-open" href="/api/library/overview">
+      Rust API reference
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl border border-gray-200 dark:border-[#27272a] bg-gradient-to-br from-[#eabfac]/5 via-[#796a7b]/5 to-[#c0c093]/5 dark:from-[#eabfac]/5 dark:via-[#796a7b]/5 dark:to-[#c0c093]/5 p-12 text-center">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Ready to find the perfect model for your hardware?
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
+      Install llmfit and start discovering which LLMs will run well on your system
+    </p>
+    <div className="flex flex-wrap justify-center gap-4">
+      <a
+        href="/installation"
+        className="inline-flex items-center px-6 py-3 rounded-lg bg-[#eabfac] text-gray-900 font-semibold hover:bg-[#d4a996] transition-colors no-underline"
+      >
+        Installation Guide
+        <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </a>
+      <a
+        href="https://github.com/AlexsJones/llmfit"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] text-gray-900 dark:text-gray-100 font-semibold hover:border-[#eabfac] dark:hover:border-[#eabfac] transition-colors no-underline"
+      >
+        View on GitHub
+        <svg className="ml-2 w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>

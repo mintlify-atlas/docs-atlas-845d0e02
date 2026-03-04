@@ -1,0 +1,345 @@
+---
+title: Installation
+description: Install llmfit on macOS, Linux, or Windows
+---
+
+llmfit is distributed as a single binary with no runtime dependencies. Choose your preferred installation method below.
+
+## macOS
+
+### Homebrew (recommended)
+
+Install via Homebrew:
+
+```bash
+brew install llmfit
+```
+
+This installs the latest stable release and keeps llmfit updated with `brew upgrade`.
+
+### curl install script
+
+Alternatively, use the quick install script:
+
+```bash
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+```
+
+This downloads the latest release binary from GitHub and installs it to `/usr/local/bin`.
+
+**Install without sudo** (installs to `~/.local/bin`):
+
+```bash
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+```
+
+<Note>
+  Make sure `~/.local/bin` is in your `$PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if needed.
+</Note>
+
+## Linux
+
+### curl install script (recommended)
+
+Install via the quick install script:
+
+```bash
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+```
+
+This downloads the latest release binary and installs it to `/usr/local/bin` (requires sudo).
+
+**Install without sudo** (installs to `~/.local/bin`):
+
+```bash
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+```
+
+<Note>
+  Make sure `~/.local/bin` is in your `$PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your `.bashrc` or `.zshrc`.
+</Note>
+
+### Manual installation
+
+1. Download the latest release for your architecture from [GitHub Releases](https://github.com/AlexsJones/llmfit/releases/latest)
+2. Extract the tarball:
+   ```bash
+   tar -xzf llmfit-*-unknown-linux-musl.tar.gz
+   ```
+3. Move the binary to a directory in your `$PATH`:
+   ```bash
+   sudo mv llmfit /usr/local/bin/
+   # Or without sudo:
+   mkdir -p ~/.local/bin && mv llmfit ~/.local/bin/
+   ```
+4. Verify installation:
+   ```bash
+   llmfit --version
+   ```
+
+## Windows
+
+### Scoop (recommended)
+
+Install via [Scoop](https://scoop.sh/):
+
+```powershell
+scoop install llmfit
+```
+
+If Scoop is not installed, follow the [Scoop installation guide](https://scoop.sh/).
+
+### Manual installation
+
+1. Download the latest Windows release from [GitHub Releases](https://github.com/AlexsJones/llmfit/releases/latest)
+2. Extract the ZIP archive
+3. Add the extracted directory to your `PATH` environment variable
+4. Open a new terminal and verify:
+   ```powershell
+   llmfit --version
+   ```
+
+## Build from source
+
+Build the latest development version from source using Rust:
+
+<Steps>
+  <Step title="Install Rust">
+    If you don't have Rust installed, get it from [rustup.rs](https://rustup.rs/):
+
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+
+    Ensure you have Rust 1.85+ (edition 2024 support).
+  </Step>
+
+  <Step title="Clone and build">
+    Clone the repository and build the release binary:
+
+    ```bash
+    git clone https://github.com/AlexsJones/llmfit.git
+    cd llmfit
+    cargo build --release
+    ```
+
+    The compiled binary will be at `target/release/llmfit`.
+  </Step>
+
+  <Step title="Install the binary">
+    Move the binary to a directory in your `$PATH`:
+
+    ```bash
+    # macOS/Linux
+    sudo mv target/release/llmfit /usr/local/bin/
+
+    # Or without sudo
+    mkdir -p ~/.local/bin && mv target/release/llmfit ~/.local/bin/
+    ```
+
+    On Windows, move `target\release\llmfit.exe` to a directory in your `PATH`.
+  </Step>
+
+  <Step title="Verify installation">
+    Confirm llmfit is working:
+
+    ```bash
+    llmfit --version
+    ```
+  </Step>
+</Steps>
+
+## System requirements
+
+### Minimum requirements
+
+- **OS**: Linux (x86_64, aarch64), macOS (Intel, Apple Silicon), or Windows (x86_64)
+- **RAM**: No specific requirement (llmfit itself uses less than 50 MB)
+- **Disk**: ~10 MB for the binary
+
+### Optional: GPU detection tools
+
+For GPU detection to work, install the appropriate tool for your hardware:
+
+| GPU Vendor | Detection Tool | Purpose |
+|------------|----------------|----------|
+| NVIDIA | `nvidia-smi` | VRAM reporting, multi-GPU support |
+| AMD | `rocm-smi` | ROCm GPU detection |
+| Intel Arc | sysfs, `lspci` | Discrete/integrated GPU detection |
+| Apple Silicon | `system_profiler` | Unified memory reporting (built-in) |
+| Ascend | `npu-smi` | NPU detection |
+
+<Note>
+  GPU detection is best-effort. If autodetection fails, use `llmfit --memory=24G` to manually specify your VRAM size.
+</Note>
+
+### Optional: Runtime providers
+
+To download and run models from the TUI, install a runtime provider:
+
+- **Ollama**: Download from [ollama.com](https://ollama.com) (macOS, Linux, Windows)
+- **llama.cpp**: Build from [github.com/ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) or install via package manager
+- **MLX**: Install via pip on Apple Silicon: `pip install mlx-lm`
+
+llmfit works without these tools installed — you just won't be able to download or detect installed models.
+
+## Verify installation
+
+After installing, verify llmfit is working:
+
+```bash
+# Check version
+llmfit --version
+
+# Display system specs
+llmfit system
+
+# Launch TUI
+llmfit
+```
+
+You should see your hardware specs (RAM, CPU cores, GPU name and VRAM).
+
+## Troubleshooting
+
+### Command not found
+
+If you see `command not found: llmfit`, the binary is not in your `$PATH`:
+
+1. Check where llmfit is installed:
+   ```bash
+   which llmfit
+   ```
+2. If it's in `~/.local/bin`, add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
+   ```bash
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+3. Reload your shell:
+   ```bash
+   source ~/.bashrc  # or ~/.zshrc
+   ```
+
+### GPU not detected
+
+If your GPU is not detected:
+
+1. Check if the detection tool is installed:
+   ```bash
+   # NVIDIA
+   nvidia-smi
+
+   # AMD
+   rocm-smi
+   ```
+2. If the tool is missing, install it via your package manager or GPU vendor's website
+3. If detection still fails, manually specify VRAM:
+   ```bash
+   llmfit --memory=24G
+   ```
+
+### Incorrect VRAM reported
+
+On some systems (VMs, passthrough setups, broken drivers), VRAM autodetection may fail or report incorrect values. Override with `--memory`:
+
+```bash
+# Specify 32 GB VRAM
+llmfit --memory=32G
+
+# Works with all modes
+llmfit --memory=24G --cli
+llmfit --memory=24G fit --perfect -n 5
+```
+
+Accepted suffixes: `G`/`GB`/`GiB` (gigabytes), `M`/`MB`/`MiB` (megabytes), `T`/`TB`/`TiB` (terabytes). Case-insensitive.
+
+### Permission denied (install script)
+
+If the install script fails with permission denied:
+
+1. Try the `--local` flag to install without sudo:
+   ```bash
+   curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+   ```
+2. Make sure `~/.local/bin` is in your `$PATH`
+
+## Update llmfit
+
+Update to the latest version using the same method you used to install:
+
+<Tabs>
+  <Tab title="Homebrew (macOS/Linux)">
+    ```bash
+    brew upgrade llmfit
+    ```
+  </Tab>
+  <Tab title="Scoop (Windows)">
+    ```powershell
+    scoop update llmfit
+    ```
+  </Tab>
+  <Tab title="curl install script">
+    ```bash
+    curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+    ```
+    The script always installs the latest release.
+  </Tab>
+  <Tab title="From source">
+    ```bash
+    cd llmfit
+    git pull
+    cargo build --release
+    sudo mv target/release/llmfit /usr/local/bin/
+    ```
+  </Tab>
+</Tabs>
+
+## Uninstall
+
+Remove llmfit by deleting the binary:
+
+<Tabs>
+  <Tab title="Homebrew">
+    ```bash
+    brew uninstall llmfit
+    ```
+  </Tab>
+  <Tab title="Scoop">
+    ```powershell
+    scoop uninstall llmfit
+    ```
+  </Tab>
+  <Tab title="Manual">
+    ```bash
+    # Find where it's installed
+    which llmfit
+
+    # Remove the binary
+    sudo rm /usr/local/bin/llmfit
+    # Or if installed locally:
+    rm ~/.local/bin/llmfit
+    ```
+  </Tab>
+</Tabs>
+
+Optionally, remove config files:
+
+```bash
+rm -rf ~/.config/llmfit
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get from installation to first successful run
+  </Card>
+  <Card title="TUI Mode" icon="terminal" href="/guides/tui-mode">
+    Learn keyboard shortcuts and navigation
+  </Card>
+  <Card title="CLI Mode" icon="code" href="/guides/cli-mode">
+    Use llmfit in scripts and automation
+  </Card>
+  <Card title="System Commands" icon="microchip" href="/api/commands/system">
+    Check detected hardware specs
+  </Card>
+</CardGroup>

@@ -1,0 +1,351 @@
+---
+title: 'Query Parameters'
+description: 'Filtering, sorting, and pagination parameters for model endpoints'
+---
+
+All query parameters are **optional** and supported on:
+- `GET /api/v1/models`
+- `GET /api/v1/models/top`
+- `GET /api/v1/models/{name}`
+
+---
+
+## Pagination
+
+<ParamField query="limit" type="integer" default="unlimited for /models, 5 for /models/top">
+  Maximum number of models to return.
+  
+  **Alias:** `n` (shorthand)
+  
+  **Examples:**
+  - `limit=10` - Return top 10 models
+  - `n=5` - Same as `limit=5`
+  - No limit specified - `/models` returns all matching, `/models/top` returns 5
+</ParamField>
+
+---
+
+## Fit Filtering
+
+<ParamField query="perfect" type="boolean" default="false">
+  When `true`, return **only** models with perfect fit level (100% GPU, optimal quantization).
+  
+  **Overrides** `min_fit` when set.
+  
+  **Valid values:** `true`, `false`
+  
+  **Example:**
+  ```bash
+  curl "http://127.0.0.1:8787/api/v1/models?perfect=true"
+  ```
+</ParamField>
+
+<ParamField query="min_fit" type="string" default="marginal">
+  Minimum fit level to include. Excludes models below this threshold.
+  
+  **Valid values:**
+  - `perfect` - Only models that fit entirely in VRAM with optimal quant
+  - `good` - Models that fit comfortably with reasonable performance
+  - `marginal` - Models that barely fit or require heavy quantization
+  - `too_tight` - Unrunnable models (usually filtered out)
+  
+  **Fit level hierarchy:** `perfect` > `good` > `marginal` > `too_tight`
+  
+  **Examples:**
+  ```bash
+  # Only good and perfect fits
+  curl "http://127.0.0.1:8787/api/v1/models?min_fit=good"
+  
+  # Include marginal fits (default)
+  curl "http://127.0.0.1:8787/api/v1/models?min_fit=marginal"
+  ```
+</ParamField>
+
+<ParamField query="include_too_tight" type="boolean" default="true for /models, false for /models/top">
+  Include models with `too_tight` fit level (unrunnable due to insufficient memory).
+  
+  **Use cases:**
+  - Set to `false` for production scheduling (exclude unrunnable models)
+  - Set to `true` for exploratory analysis (see what's close to runnable)
+  
+  **Example:**
+  ```bash
+  # Exclude unrunnable models
+  curl "http://127.0.0.1:8787/api/v1/models?include_too_tight=false"
+  ```
+</ParamField>
+
+---
+
+## Runtime Filtering
+
+<ParamField query="runtime" type="string" default="any">
+  Filter by inference runtime/backend.
+  
+  **Valid values:**
+  - `any` - All runtimes (default)
+  - `mlx` - Apple MLX (Apple Silicon only)
+  - `llamacpp` - llama.cpp (CUDA, ROCm, Metal, CPU)
+  
+  **Aliases:** `llama.cpp`, `llama_cpp` all map to `llamacpp`
+  
+  **Examples:**
+  ```bash
+  # Only llama.cpp compatible models
+  curl "http://127.0.0.1:8787/api/v1/models?runtime=llamacpp"
+  
+  # Only MLX models (Apple Silicon)
+  curl "http://127.0.0.1:8787/api/v1/models?runtime=mlx"
+  ```
+</ParamField>
+
+---
+
+## Use Case Filtering
+
+<ParamField query="use_case" type="string">
+  Filter by model use case specialization.
+  
+  **Valid values:**
+  - `general` - General-purpose models
+  - `coding` - Code generation and completion
+  - `reasoning` - Complex reasoning and problem-solving
+  - `chat` - Conversational/instruction-following
+  - `multimodal` - Vision + language models
+  - `embedding` - Text embedding models
+  
+  **Aliases:**
+  - `code` → `coding`
+  - `reason` → `reasoning`
+  - `vision` → `multimodal`
+  - `embed` → `embedding`
+  
+  **Examples:**
+  ```bash
+  # Coding-specialized models
+  curl "http://127.0.0.1:8787/api/v1/models?use_case=coding"
+  
+  # Reasoning models
+  curl "http://127.0.0.1:8787/api/v1/models?use_case=reasoning"
+  ```
+</ParamField>
+
+---
+
+## Text Filtering
+
+<ParamField query="provider" type="string">
+  Filter by model provider (case-insensitive substring match).
+  
+  **Matches against:** Model provider field
+  
+  **Examples:**
+  ```bash
+  # All Meta models
+  curl "http://127.0.0.1:8787/api/v1/models?provider=Meta"
+  
+  # All Qwen models
+  curl "http://127.0.0.1:8787/api/v1/models?provider=qwen"
+  ```
+</ParamField>
+
+<ParamField query="search" type="string">
+  Free-text search across multiple fields (case-insensitive substring match).
+  
+  **Searches:**
+  - Model name
+  - Provider name
+  - Parameter count (e.g., "7B", "70B")
+  - Use case
+  - Category label
+  
+  **Examples:**
+  ```bash
+  # Find all "Llama" models
+  curl "http://127.0.0.1:8787/api/v1/models?search=llama"
+  
+  # Find 7B parameter models
+  curl "http://127.0.0.1:8787/api/v1/models?search=7B"
+  
+  # Search by use case
+  curl "http://127.0.0.1:8787/api/v1/models?search=coding"
+  ```
+</ParamField>
+
+---
+
+## Sorting
+
+<ParamField query="sort" type="string" default="score">
+  Sort order for returned models.
+  
+  **Valid values:**
+  - `score` - Overall fit score (default, descending)
+  - `tps` - Estimated tokens per second (descending)
+  - `params` - Parameter count (descending)
+  - `mem` - Memory utilization percentage (ascending)
+  - `ctx` - Context length (descending)
+  - `date` - Release date (newest first)
+  - `use_case` - Use case category (alphabetical)
+  
+  **Aliases:**
+  - `tokens`, `throughput` → `tps`
+  - `parameters` → `params`
+  - `memory`, `mem_pct`, `utilization` → `mem`
+  - `context` → `ctx`
+  - `release`, `released` → `date`
+  - `use`, `usecase` → `use_case`
+  
+  **Examples:**
+  ```bash
+  # Sort by inference speed
+  curl "http://127.0.0.1:8787/api/v1/models?sort=tps"
+  
+  # Sort by context window size
+  curl "http://127.0.0.1:8787/api/v1/models?sort=ctx"
+  
+  # Sort by parameter count
+  curl "http://127.0.0.1:8787/api/v1/models?sort=params"
+  ```
+</ParamField>
+
+---
+
+## Context Configuration
+
+<ParamField query="max_context" type="integer">
+  Maximum context length to use for memory estimation (in tokens).
+  
+  **Overrides** the global `--max-context` flag for this request.
+  
+  **Use cases:**
+  - Query "what if" scenarios with different context requirements
+  - Find models suitable for specific context window needs
+  - Per-request memory budget constraints
+  
+  **Effect:** Models are re-scored with the specified context limit, affecting:
+  - Memory requirements
+  - Fit levels
+  - Score calculations
+  - Quantization recommendations
+  
+  **Examples:**
+  ```bash
+  # Find models for 8K context
+  curl "http://127.0.0.1:8787/api/v1/models?max_context=8192"
+  
+  # Find models for 32K context
+  curl "http://127.0.0.1:8787/api/v1/models?max_context=32768"
+  ```
+</ParamField>
+
+---
+
+## Common Combinations
+
+### Production Scheduling
+
+Conservative defaults for reliable placement:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models/top?limit=5&min_fit=good&include_too_tight=false&sort=score"
+```
+
+### Coding Workload
+
+Find top coding models:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models/top?use_case=coding&min_fit=good&limit=10"
+```
+
+### High-Throughput Models
+
+Sort by inference speed:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models?sort=tps&min_fit=good&limit=20"
+```
+
+### Large Context Requirements
+
+Find models for long-context tasks:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models?max_context=32768&sort=ctx&min_fit=good"
+```
+
+### Provider-Specific
+
+All models from a specific provider:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models?provider=Meta&min_fit=marginal"
+```
+
+### Runtime-Constrained
+
+llama.cpp only deployment:
+
+```bash
+curl "http://127.0.0.1:8787/api/v1/models/top?runtime=llamacpp&limit=10"
+```
+
+---
+
+## Error Handling
+
+Invalid parameter values return **HTTP 400** with error details:
+
+**Invalid `min_fit`:**
+```json
+{
+  "error": "invalid min_fit value: use perfect|good|marginal|too_tight"
+}
+```
+
+**Invalid `runtime`:**
+```json
+{
+  "error": "invalid runtime value: use any|mlx|llamacpp"
+}
+```
+
+**Invalid `use_case`:**
+```json
+{
+  "error": "invalid use_case value: use general|coding|reasoning|chat|multimodal|embedding"
+}
+```
+
+**Invalid `sort`:**
+```json
+{
+  "error": "invalid sort value: use score|tps|params|mem|ctx|date|use_case"
+}
+```
+
+---
+
+## Parameter Precedence
+
+When multiple filters interact:
+
+1. **`perfect=true`** overrides `min_fit`
+2. **`include_too_tight=false`** removes too_tight models regardless of `min_fit`
+3. **`search`** parameter in path (`/models/{name}`) is added to query `search` filter
+4. **`max_context`** overrides global `--max-context` flag
+5. **`limit`** is applied after all filtering and sorting
+
+---
+
+## Default Values by Endpoint
+
+| Parameter | `/api/v1/models` | `/api/v1/models/top` |
+|-----------|------------------|----------------------|
+| `limit` | unlimited | 5 |
+| `min_fit` | marginal | marginal |
+| `include_too_tight` | true | false |
+| `sort` | score | score |
+| `perfect` | false | false |
+| All others | none | none |

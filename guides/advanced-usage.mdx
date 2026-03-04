@@ -1,0 +1,552 @@
+---
+title: Advanced Usage
+description: GPU memory override, context caps, remote Ollama, serve mode, and environment variables
+---
+
+llmfit provides advanced flags and modes for edge cases, automation, and cluster deployments.
+
+## GPU Memory Override
+
+GPU VRAM autodetection can fail on some systems (broken `nvidia-smi`, VMs, passthrough setups, remote GPUs). Use `--memory` to manually specify your GPU's VRAM.
+
+```bash
+# Override with 32 GB VRAM
+llmfit --memory=32G
+
+# Megabytes also work (32000 MB ≈ 31.25 GB)
+llmfit --memory=32000M
+
+# Terabytes for large systems
+llmfit --memory=1.5T
+```
+
+**Accepted suffixes:**
+
+<ParamField path="G / GB / GiB" type="suffix">
+  Gigabytes (case-insensitive)
+</ParamField>
+
+<ParamField path="M / MB / MiB" type="suffix">
+  Megabytes (case-insensitive)
+</ParamField>
+
+<ParamField path="T / TB / TiB" type="suffix">
+  Terabytes (case-insensitive)
+</ParamField>
+
+**Behavior:**
+
+- If no GPU was detected, `--memory` creates a synthetic GPU entry so models are scored for GPU inference
+- If a GPU was detected but VRAM is unknown or wrong, `--memory` overrides the detected value
+- Works with all modes: TUI, CLI, subcommands, and `serve`
+
+**Examples:**
+
+```bash
+# TUI with override
+llmfit --memory=24G
+
+# CLI fit table
+llmfit --memory=24G --cli
+
+# Subcommands
+llmfit --memory=24G fit --perfect -n 5
+llmfit --memory=24G system
+llmfit --memory=24G info "Llama-3.1-70B"
+llmfit --memory=24G recommend --json
+
+# Serve mode
+llmfit --memory=24G serve --host 0.0.0.0 --port 8787
+```
+
+**Use cases:**
+
+- **VMs / passthrough**: GPU is present but not directly visible to OS
+- **Broken nvidia-smi**: nvidia-smi reports incorrect VRAM or fails
+- **Remote GPUs**: Planning for a GPU you don't have locally
+- **Multi-GPU**: Override with aggregate VRAM (e.g., 2x 24GB = 48GB)
+
+<Note>
+  `--memory` overrides VRAM only. It does not affect system RAM or CPU detection.
+</Note>
+
+---
+
+## Context Length Cap
+
+Use `--max-context` to cap the context length used for memory estimation. This does **not** change each model's advertised maximum context — it only affects how much memory llmfit assumes the model will use.
+
+```bash
+# Cap context at 4K tokens
+llmfit --max-context 4096 --cli
+
+# Cap at 8K (good for most chat workloads)
+llmfit --max-context 8192
+
+# Cap at 16K (long documents, code analysis)
+llmfit --max-context 16384
+```
+
+**Why cap context?**
+
+- **Reduce memory usage**: Longer context = more memory for KV cache
+- **Realistic workloads**: You may not need a model's full 128k context window
+- **Fit more models**: Capping context can promote a model from "Marginal" to "Good" fit
+
+**Memory impact:**
+
+KV cache size grows linearly with context length:
+
+```
+KV cache memory ≈ (context_length / 1000) * 0.1 GB per 1B params
+```
+
+Example for Llama-3.1-70B:
+- 4K context: ~0.7 GB KV cache
+- 8K context: ~1.4 GB KV cache
+- 128K context: ~22.4 GB KV cache
+
+**Fallback:**
+
+If `--max-context` is not set, llmfit checks the `OLLAMA_CONTEXT_LENGTH` environment variable:
+
+```bash
+OLLAMA_CONTEXT_LENGTH=8192 llmfit
+```
+
+This is convenient if you use Ollama and have already configured your context length via `OLLAMA_CONTEXT_LENGTH`.
+
+**Examples:**
+
+```bash
+# TUI with 8K context cap
+llmfit --max-context 8192
+
+# CLI fit table
+llmfit --max-context 8192 fit --perfect -n 5
+
+# Recommendations
+llmfit --max-context 4096 recommend --json --limit 5
+
+# Serve mode (all API responses use capped context)
+llmfit --max-context 8192 serve --host 0.0.0.0 --port 8787
+```
+
+**API per-request override:**
+
+In `serve` mode, you can override the context cap on a per-request basis with the `max_context` query parameter:
+
+```bash
+curl "http://localhost:8787/api/v1/models?max_context=16384&limit=10"
+```
+
+---
+
+## Remote Ollama
+
+By default, llmfit connects to Ollama at `http://localhost:11434`. To connect to a remote Ollama instance, set the `OLLAMA_HOST` environment variable.
+
+```bash
+# Connect to Ollama on a specific IP and port
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit
+
+# Connect via hostname
+OLLAMA_HOST="http://ollama-server:666" llmfit
+
+# Works with all TUI and CLI commands
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit --cli
+OLLAMA_HOST="http://192.168.1.100:11434" llmfit fit --perfect -n 5
+```
+
+**Use cases:**
+
+- **GPU server + laptop client**: Run llmfit on your laptop while Ollama serves from a GPU server
+- **Docker containers**: Connect to Ollama running in a Docker container with custom ports
+- **Reverse proxies**: Use Ollama behind a reverse proxy or load balancer
+
+**How it works:**
+
+llmfit makes HTTP requests to:
+- `GET $OLLAMA_HOST/api/tags` — List installed models
+- `POST $OLLAMA_HOST/api/pull` — Download models
+
+The TUI shows install status and download progress for the remote Ollama instance.
+
+**Example workflow:**
+
+```bash
+# SSH tunnel to GPU server
+ssh -L 11434:localhost:11434 gpu-server
+
+# In another terminal, run llmfit locally (connects via tunnel)
+llmfit
+```
+
+This allows you to use llmfit's TUI on your local machine while managing models on a remote GPU server.
+
+<Tip>
+  Combine `OLLAMA_HOST` with `--memory` to plan models for a remote GPU:
+  
+  ```bash
+  OLLAMA_HOST="http://gpu-server:11434" llmfit --memory 80G
+  ```
+</Tip>
+
+---
+
+## Serve Mode for Cluster Scheduling
+
+The `serve` subcommand starts an HTTP API that exposes node-local model fit analysis. This is designed for cluster schedulers, aggregators, and remote clients that need to query hardware compatibility across multiple nodes.
+
+```bash
+# Start on default port (8787)
+llmfit serve
+
+# Bind to all interfaces
+llmfit serve --host 0.0.0.0 --port 8787
+
+# With global flags (applied to all API responses)
+llmfit --memory 24G --max-context 8192 serve --host 0.0.0.0 --port 8787
+```
+
+**Key endpoints:**
+
+<ParamField path="GET /health" type="endpoint">
+  Liveness probe. Returns `{"status": "ok", "node": {...}}`
+</ParamField>
+
+<ParamField path="GET /api/v1/system" type="endpoint">
+  Node hardware info (CPU, RAM, GPU, backend)
+</ParamField>
+
+<ParamField path="GET /api/v1/models" type="endpoint">
+  Full fit list with filters (limit, min_fit, runtime, use_case, etc.)
+</ParamField>
+
+<ParamField path="GET /api/v1/models/top" type="endpoint">
+  Top runnable models for scheduling (conservative defaults: limit=5, min_fit=good)
+</ParamField>
+
+See [REST API Guide](/guides/rest-api) for full endpoint documentation, query parameters, and response schemas.
+
+**Cluster scheduling workflow:**
+
+1. Run `llmfit serve` on each node in your cluster
+2. From your scheduler, poll each node:
+   ```bash
+   curl http://node1:8787/api/v1/models/top?limit=5&min_fit=good
+   curl http://node2:8787/api/v1/models/top?limit=5&min_fit=good
+   curl http://node3:8787/api/v1/models/top?limit=5&min_fit=good
+   ```
+3. Aggregate results and decide which node to schedule a model on
+4. Send deploy command to chosen node
+
+**Example aggregator (Python):**
+
+```python
+import requests
+import json
+
+nodes = ["http://node1:8787", "http://node2:8787", "http://node3:8787"]
+
+for node_url in nodes:
+    system = requests.get(f"{node_url}/api/v1/system").json()
+    top_models = requests.get(f"{node_url}/api/v1/models/top?limit=5&min_fit=good").json()
+    
+    print(f"\nNode: {system['node']['name']}")
+    print(f"GPU: {system['system']['gpu_name']} ({system['system']['gpu_vram_gb']} GB)")
+    print(f"Top models:")
+    for model in top_models["models"][:3]:
+        print(f"  - {model['name']} (score: {model['score']:.1f}, fit: {model['fit_level']})")
+```
+
+**Conservative placement defaults:**
+
+For production placement, prefer:
+
+```
+min_fit=good
+include_too_tight=false
+sort=score
+limit=5..20
+```
+
+This ensures only models that fit with headroom are considered.
+
+---
+
+## Environment Variables
+
+llmfit respects the following environment variables:
+
+<ParamField path="OLLAMA_HOST" type="string" default="http://localhost:11434">
+  Ollama API URL. Set to connect to remote Ollama instances.
+  
+  **Example:**
+  ```bash
+  OLLAMA_HOST="http://192.168.1.100:11434" llmfit
+  ```
+</ParamField>
+
+<ParamField path="OLLAMA_CONTEXT_LENGTH" type="integer">
+  Context length fallback for memory estimation when `--max-context` is not set.
+  
+  **Example:**
+  ```bash
+  OLLAMA_CONTEXT_LENGTH=8192 llmfit
+  ```
+  
+  This is useful if you use Ollama and have already configured your context length via `OLLAMA_CONTEXT_LENGTH`.
+</ParamField>
+
+**Priority:**
+
+1. `--max-context` flag (highest priority)
+2. `OLLAMA_CONTEXT_LENGTH` environment variable
+3. Model's full advertised context (default, lowest priority)
+
+---
+
+## Combining Flags
+
+All global flags can be combined:
+
+```bash
+# TUI with memory override, context cap, and remote Ollama
+OLLAMA_HOST="http://gpu-server:11434" llmfit --memory 80G --max-context 16384
+
+# CLI fit table
+llmfit --memory 24G --max-context 8192 fit --perfect -n 5
+
+# Serve mode with overrides
+llmfit --memory 32G --max-context 8192 serve --host 0.0.0.0 --port 8787
+
+# Plan for a remote GPU
+OLLAMA_HOST="http://gpu-server:11434" llmfit --memory 80G plan "Llama-3.1-70B" --context 32768
+```
+
+---
+
+## Advanced Workflows
+
+### 1. Multi-GPU Aggregate VRAM
+
+If you have multiple GPUs with shared VRAM pool (e.g., NVLink), override with total VRAM:
+
+```bash
+# 4x A100 80GB = 320GB aggregate
+llmfit --memory 320G
+```
+
+llmfit will score models as if you have a single 320GB GPU.
+
+### 2. Planning for Future Hardware
+
+Use `--memory` to plan models for a GPU you don't have yet:
+
+```bash
+# Plan for RTX 5090 (32GB VRAM, hypothetical)
+llmfit --memory 32G fit --perfect -n 10
+```
+
+### 3. Workload-Specific Context Caps
+
+**Chat workload (short conversations):**
+```bash
+llmfit --max-context 4096 recommend --use-case chat --limit 5
+```
+
+**Code analysis (medium context):**
+```bash
+llmfit --max-context 16384 recommend --use-case coding --limit 5
+```
+
+**Long documents (full context):**
+```bash
+llmfit --max-context 131072 recommend --use-case reasoning --limit 5
+```
+
+### 4. Remote Hardware Inspection
+
+SSH into a remote node and check its hardware without installing llmfit:
+
+```bash
+# On local machine
+ssh gpu-server 'curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local'
+
+# Run fit analysis remotely
+ssh gpu-server '~/.local/bin/llmfit --json fit -n 5' | jq '.models[] | {name, score, fit_level}'
+```
+
+### 5. Kubernetes Cluster Scheduling
+
+Deploy llmfit as a DaemonSet on all GPU nodes:
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: llmfit-serve
+spec:
+  selector:
+    matchLabels:
+      app: llmfit
+  template:
+    metadata:
+      labels:
+        app: llmfit
+    spec:
+      hostNetwork: true
+      containers:
+      - name: llmfit
+        image: ghcr.io/alexsjones/llmfit:latest
+        command: ["/usr/local/bin/llmfit"]
+        args: ["serve", "--host", "0.0.0.0", "--port", "8787"]
+        ports:
+        - containerPort: 8787
+          name: http
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+```
+
+Then query each node's API from your scheduler:
+
+```bash
+kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' | \
+  xargs -I {} curl -s http://{}:8787/api/v1/models/top?limit=5 | jq '.models[].name'
+```
+
+---
+
+## Performance Considerations
+
+### TUI Startup Time
+
+The TUI probes all providers (Ollama, MLX, llama.cpp) on startup. On slow networks or with many installed models, this can take 1-2 seconds. To skip provider detection, use CLI mode:
+
+```bash
+llmfit --cli  # No provider probing
+```
+
+### API Response Time
+
+The REST API computes fit analysis on each request. For large model databases (200+ models), this takes ~50-100ms. To reduce latency:
+
+- Use `limit` parameter to reduce result set
+- Use `min_fit=good` to exclude unrunnable models
+- Cache results on the client side if hardware doesn't change
+
+### Download Speed
+
+- **Ollama**: Controlled by Ollama daemon (typically saturates bandwidth)
+- **llama.cpp**: Direct HuggingFace download (typically faster than Ollama)
+- **MLX**: Direct HuggingFace download via `mlx_lm` (similar to llama.cpp)
+
+To maximize download speed, use llama.cpp or MLX instead of Ollama.
+
+---
+
+## Troubleshooting
+
+### GPU Not Detected
+
+**Symptom:** TUI shows "GPU: none" even though you have a GPU.
+
+**Causes:**
+- nvidia-smi not in PATH or not working
+- VM/passthrough setup where GPU is not visible to OS
+- AMD GPU without rocm-smi
+- Intel Arc without proper drivers
+
+**Solution:**
+
+Use `--memory` to override:
+
+```bash
+llmfit --memory 24G
+```
+
+### Wrong VRAM Amount
+
+**Symptom:** TUI shows incorrect VRAM (e.g., 16GB instead of 24GB).
+
+**Causes:**
+- nvidia-smi reporting bug
+- Shared memory incorrectly reported
+- Multi-GPU with incorrect aggregation
+
+**Solution:**
+
+Use `--memory` to override:
+
+```bash
+llmfit --memory 24G
+```
+
+### Models Don't Fit as Expected
+
+**Symptom:** Models you think should fit are marked "Too Tight".
+
+**Causes:**
+- Context length too high (KV cache uses a lot of memory)
+- Available RAM lower than you think (OS overhead, other processes)
+- Model requires more memory than you expect (MoE inactive experts, etc.)
+
+**Solution:**
+
+Cap context length:
+
+```bash
+llmfit --max-context 8192
+```
+
+Or check actual available RAM:
+
+```bash
+llmfit system
+```
+
+### Ollama Not Detected
+
+**Symptom:** TUI shows "Ollama: ✗" even though Ollama is running.
+
+**Causes:**
+- Ollama running on non-default port
+- Firewall blocking localhost:11434
+- Ollama not fully started yet
+
+**Solution:**
+
+Set `OLLAMA_HOST`:
+
+```bash
+OLLAMA_HOST="http://localhost:11434" llmfit
+```
+
+Or wait a few seconds and restart llmfit.
+
+### Download Fails
+
+**Symptom:** Download starts but fails with an error.
+
+**Causes:**
+- Network error (HuggingFace unreachable)
+- Disk full
+- Ollama daemon stopped mid-download
+- GGUF repo not found
+
+**Solution:**
+
+1. Check network: `curl -I https://huggingface.co`
+2. Check disk space: `df -h`
+3. Restart Ollama: `ollama serve`
+4. Try a different provider (Ollama vs llama.cpp)
+
+<Tip>
+  Use `llmfit --memory <size> system` to verify that the override is applied correctly before running fit analysis.
+</Tip>
+
+<Note>
+  All advanced flags (`--memory`, `--max-context`, `OLLAMA_HOST`) work in TUI, CLI, and `serve` modes. In `serve` mode, they affect all API responses.
+</Note>

@@ -1,0 +1,348 @@
+---
+title: Windows Platform Support
+description: NVIDIA GPU detection, Scoop installation, and WSL considerations for Windows
+---
+
+Windows supports RAM/CPU detection and NVIDIA GPU detection via nvidia-smi.
+
+## GPU Detection
+
+### NVIDIA GPUs
+
+llmfit detects NVIDIA GPUs via two methods:
+
+#### 1. nvidia-smi (Primary)
+
+```powershell
+nvidia-smi --query-gpu=memory.total,name --format=csv,noheader,nounits
+```
+
+**Requirements:**
+
+- NVIDIA drivers installed
+- nvidia-smi.exe in PATH (usually `C:\Program Files\NVIDIA Corporation\NVSMI\`)
+
+**Multi-GPU Support:**
+
+- Aggregates same-model GPUs (e.g., 2x RTX 4090 → count=2, per-card VRAM=24GB)
+- Total VRAM = per-card VRAM × count
+
+#### 2. WMI (Windows Management Instrumentation)
+
+Fallback method when nvidia-smi is unavailable or for non-NVIDIA GPUs:
+
+```powershell
+# PowerShell (primary)
+Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM
+
+# wmic (legacy fallback)
+wmic path win32_VideoController get Name,AdapterRAM /format:csv
+```
+
+**Detected GPUs:**
+
+- NVIDIA (GeForce, RTX, Quadro, Tesla) → CUDA backend
+- AMD (Radeon, RX) → Vulkan backend
+- Intel (Arc, Iris) → SYCL backend
+
+**Filtered entries:**
+
+- Microsoft Basic Display Adapter
+- Virtual/Remote display adapters
+
+**VRAM Limitations:**
+
+WMI `AdapterRAM` is a 32-bit field capped at ~4 GB. For GPUs with >4 GB VRAM, llmfit estimates from GPU name:
+
+```rust
+if vram_gb < 0.1 || (vram_gb <= 4.1 && estimate_vram_from_name(name) > 4.1) {
+    vram_gb = estimate_vram_from_name(name);
+}
+```
+
+## Installation Methods
+
+### Scoop (Recommended)
+
+```powershell
+scoop install llmfit
+```
+
+**If Scoop is not installed:**
+
+```powershell
+# Install Scoop
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# Install llmfit
+scoop install llmfit
+```
+
+### From Source
+
+**Prerequisites:**
+
+- Rust toolchain: https://rustup.rs/
+- Git for Windows: https://git-scm.com/download/win
+
+```powershell
+git clone https://github.com/AlexsJones/llmfit.git
+cd llmfit
+cargo build --release
+
+# Copy binary to PATH
+copy target\release\llmfit.exe C:\Windows\System32\
+# or add target\release to PATH
+```
+
+### Binary Download
+
+Download the latest Windows binary from [GitHub Releases](https://github.com/AlexsJones/llmfit/releases):
+
+1. Download `llmfit-windows-x64.zip`
+2. Extract `llmfit.exe`
+3. Move to a directory in PATH (e.g., `C:\Program Files\llmfit\`)
+4. Add to PATH via System Properties → Environment Variables
+
+## WSL (Windows Subsystem for Linux)
+
+llmfit can run natively on Windows or inside WSL. Each has trade-offs:
+
+### Running in WSL2
+
+**Advantages:**
+
+- Native Linux environment
+- Better support for ROCm (AMD) if needed
+- Consistent with Linux instructions
+
+**Requirements:**
+
+- WSL2 (not WSL1)
+- NVIDIA CUDA drivers for WSL: https://docs.nvidia.com/cuda/wsl-user-guide/
+
+**Installation:**
+
+```bash
+# Inside WSL2
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+```
+
+**GPU Detection in WSL:**
+
+llmfit detects WSL via:
+
+```bash
+echo $WSL_DISTRO_NAME
+cat /proc/version | grep -i microsoft
+```
+
+NVIDIA GPUs work via nvidia-smi in WSL2:
+
+```bash
+nvidia-smi
+# Should show GPU if CUDA drivers are installed
+```
+
+**Known Limitations:**
+
+- AMD ROCm not officially supported in WSL
+- Intel Arc support limited in WSL
+
+### Running Natively on Windows
+
+**Advantages:**
+
+- Direct GPU access (no virtualization overhead)
+- Better NVIDIA GPU support
+- WMI fallback for non-NVIDIA GPUs
+
+**Recommendation:**
+
+Use native Windows installation for best GPU detection.
+
+## Troubleshooting
+
+### GPU Not Detected
+
+#### NVIDIA GPU
+
+1. Check if nvidia-smi works:
+   ```powershell
+   nvidia-smi
+   ```
+
+2. If nvidia-smi not found:
+   ```powershell
+   # Check PATH
+   $env:PATH -split ';' | Select-String -Pattern 'NVIDIA'
+   
+   # Add to PATH if missing
+   $env:PATH += ";C:\Program Files\NVIDIA Corporation\NVSMI"
+   ```
+
+3. Reinstall NVIDIA drivers:
+   - Download from https://www.nvidia.com/Download/index.aspx
+   - Use "Clean Install" option
+
+4. Check WMI fallback:
+   ```powershell
+   Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM
+   ```
+
+5. Manual override:
+   ```powershell
+   llmfit --memory=24G system
+   ```
+
+#### AMD/Intel GPU
+
+AMD and Intel GPUs rely on WMI detection:
+
+```powershell
+Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,DriverVersion
+```
+
+**Expected output:**
+
+```
+Name                        AdapterRAM  DriverVersion
+----                        ----------  -------------
+AMD Radeon RX 7900 XTX     25769803776  31.0.24001.18012
+```
+
+If AdapterRAM shows low value (< 4 GB) for high-VRAM GPU, llmfit estimates from name.
+
+### VRAM Shows Incorrect Value
+
+**WMI 32-bit limitation:**
+
+WMI reports wrong VRAM for GPUs with >4 GB:
+
+```powershell
+# Check raw value
+(Get-CimInstance Win32_VideoController).AdapterRAM
+```
+
+llmfit automatically falls back to name-based estimation. If incorrect, use manual override:
+
+```powershell
+llmfit --memory=16G
+```
+
+### nvidia-smi Works But llmfit Doesn't Detect GPU
+
+**PATH issue:**
+
+```powershell
+# Check if nvidia-smi is in PATH
+Get-Command nvidia-smi
+
+# If not found, add to PATH
+$env:PATH += ";C:\Program Files\NVIDIA Corporation\NVSMI"
+
+# Make permanent via System Properties → Environment Variables
+```
+
+**Command execution issue:**
+
+llmfit spawns `nvidia-smi` as a subprocess. Check for permission issues:
+
+```powershell
+# Run llmfit as Administrator
+Start-Process powershell -Verb RunAs
+llmfit system
+```
+
+### WSL-Specific Issues
+
+**nvidia-smi not working in WSL:**
+
+1. Install CUDA drivers for WSL:
+   - Download from https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu
+   - Follow WSL-specific installation steps
+
+2. Restart WSL:
+   ```powershell
+   wsl --shutdown
+   wsl
+   ```
+
+3. Verify GPU access:
+   ```bash
+   nvidia-smi
+   ```
+
+**WSL not detected:**
+
+llmfit checks for WSL via environment variables:
+
+```bash
+echo $WSL_DISTRO_NAME
+echo $WSL_INTEROP
+cat /proc/version | grep -i microsoft
+```
+
+If none exist, WSL detection fails (non-critical, only affects logging).
+
+### Performance Issues
+
+**High VRAM usage:**
+
+Check VRAM usage via Task Manager:
+
+1. Task Manager → Performance → GPU
+2. Watch "Dedicated GPU memory" usage
+
+If near capacity:
+
+- Close GPU-intensive apps (browsers, games)
+- Use `--max-context` to limit context length:
+  ```powershell
+  llmfit --max-context 4096
+  ```
+
+**Slow inference estimates:**
+
+llmfit uses GPU memory bandwidth for speed estimation. Check GPU model detection:
+
+```powershell
+llmfit system
+# GPU: NVIDIA GeForce RTX 4090 (24.00 GB VRAM, CUDA)
+```
+
+If GPU model is wrong or generic ("NVIDIA GPU"), speed estimates may be inaccurate.
+
+## Known Limitations
+
+### AMD GPU Support
+
+- **No ROCm on Windows**: AMD GPUs use Vulkan backend (slower than ROCm on Linux)
+- **VRAM detection**: Relies on WMI (may be inaccurate for >4 GB GPUs)
+- **Workaround**: Use manual override for accurate VRAM:
+  ```powershell
+  llmfit --memory=24G  # For RX 7900 XTX
+  ```
+
+### Intel Arc Support
+
+- **Limited detection**: Relies on WMI
+- **SYCL backend**: Requires Intel oneAPI runtime (not auto-detected)
+- **Recommendation**: Use NVIDIA GPU or run in WSL2 for better Intel Arc support
+
+### Multi-GPU Limitations
+
+- **Different vendors**: llmfit uses the GPU with most VRAM as primary
+- **Mixed NVIDIA + AMD**: Only NVIDIA detected via nvidia-smi, AMD via WMI
+- **Check detection**:
+  ```powershell
+  llmfit system
+  # Should list all detected GPUs
+  ```
+
+## Next Steps
+
+- [Platform Overview](/platforms/overview)
+- [Linux Platform Guide](/platforms/linux)
+- [macOS Platform Guide](/platforms/macos)

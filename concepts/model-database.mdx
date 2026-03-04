@@ -1,0 +1,368 @@
+---
+title: Model Database
+description: Structure, sources, and update process for the embedded model database
+---
+
+llmfit ships with an embedded database of hundreds of models from the HuggingFace ecosystem, stored in `data/hf_models.json` and baked into the binary at compile time.
+
+## Database Structure
+
+The model database is a JSON array where each entry describes a single model variant:
+
+```json
+{
+  "name": "meta-llama/Llama-3.1-8B-Instruct",
+  "provider": "Meta",
+  "parameter_count": "8B",
+  "parameters_raw": 8030000000,
+  "min_ram_gb": 4.8,
+  "recommended_ram_gb": 9.6,
+  "min_vram_gb": 5.2,
+  "quantization": "Q4_K_M",
+  "context_length": 131072,
+  "use_case": "Chat, instruction following",
+  "is_moe": false,
+  "release_date": "2024-07-23",
+  "gguf_sources": [
+    {
+      "repo": "unsloth/Llama-3.1-8B-Instruct-GGUF",
+      "provider": "unsloth"
+    },
+    {
+      "repo": "bartowski/Llama-3.1-8B-Instruct-GGUF",
+      "provider": "bartowski"
+    }
+  ]
+}
+```
+
+### Core Fields
+
+<ResponseField name="name" type="string" required>
+Full HuggingFace model repo ID (e.g., `Qwen/Qwen2.5-Coder-32B-Instruct`)
+</ResponseField>
+
+<ResponseField name="provider" type="string" required>
+Organization or author (e.g., `Meta`, `Mistral AI`, `DeepSeek`)
+</ResponseField>
+
+<ResponseField name="parameter_count" type="string" required>
+Human-readable size (e.g., `7B`, `8x7B`, `1.3B`)
+</ResponseField>
+
+<ResponseField name="parameters_raw" type="number">
+Exact parameter count for precise memory calculations
+</ResponseField>
+
+<ResponseField name="min_ram_gb" type="number" required>
+Minimum system RAM for CPU-only inference at Q4_K_M quantization
+</ResponseField>
+
+<ResponseField name="recommended_ram_gb" type="number" required>
+Recommended RAM for comfortable inference (typically 2× min_ram_gb)
+</ResponseField>
+
+<ResponseField name="min_vram_gb" type="number">
+Minimum VRAM for GPU inference at Q4_K_M. `null` for CPU-only models.
+</ResponseField>
+
+<ResponseField name="quantization" type="string" required>
+Default quantization format (e.g., `Q4_K_M`, `Q8_0`, `mlx-4bit`)
+
+**Note:** llmfit overrides this with dynamic quantization selection at runtime.
+</ResponseField>
+
+<ResponseField name="context_length" type="number" required>
+Maximum context window in tokens
+</ResponseField>
+
+<ResponseField name="use_case" type="string" required>
+Intended use case(s): `General`, `Coding`, `Reasoning`, `Chat`, `Multimodal`, `Embedding`
+</ResponseField>
+
+### MoE-Specific Fields
+
+<ResponseField name="is_moe" type="boolean" default={false}>
+Whether this is a Mixture-of-Experts architecture
+</ResponseField>
+
+<ResponseField name="num_experts" type="number">
+Total number of expert layers (e.g., 8 for Mixtral 8x7B)
+</ResponseField>
+
+<ResponseField name="active_experts" type="number">
+Number of experts activated per token (typically 2)
+</ResponseField>
+
+<ResponseField name="active_parameters" type="number">
+Effective parameter count when only active experts are loaded
+
+**Example:** Mixtral 8x7B has 46.7B total params but only 12.9B active params.
+</ResponseField>
+
+### GGUF Sources
+
+<ResponseField name="gguf_sources" type="array">
+Known GGUF download repositories for llama.cpp runtime
+
+```json
+[
+  {
+    "repo": "unsloth/Llama-3.1-8B-Instruct-GGUF",
+    "provider": "unsloth"
+  }
+]
+```
+
+Populated by the scraper when `--no-gguf-sources` is not specified. Cached for 7 days to reduce HuggingFace API load.
+</ResponseField>
+
+## Memory Calculation Formulas
+
+The scraper estimates memory requirements using quantization bytes-per-parameter:
+
+### RAM (CPU-only inference)
+
+```python
+bpp = 0.58  # Q4_K_M
+model_size_gb = (params * bpp) / (1024 ** 3)
+min_ram_gb = model_size_gb * 1.2  # +20% overhead
+recommended_ram_gb = model_size_gb * 2.0
+```
+
+### VRAM (GPU inference)
+
+```python
+model_size_gb = (params * bpp) / (1024 ** 3)
+min_vram_gb = model_size_gb * 1.1  # +10% for KV cache
+```
+
+<Warning>
+These are **baseline estimates** at Q4_K_M. llmfit performs dynamic quantization selection at runtime, so actual memory usage may differ.
+</Warning>
+
+## Model Categories
+
+The database spans multiple categories sourced from HuggingFace:
+
+<AccordionGroup>
+<Accordion title="General Purpose" icon="brain">
+- **Meta Llama** (3.1, 3.2, 3.3, 4 Scout, 4 Maverick)
+- **Mistral** (7B, Nemo, Small)
+- **Google Gemma** (2B, 7B, 9B, 27B)
+- **Qwen** (0.5B to 72B)
+- **Microsoft Phi** (3.5, 4)
+- **DeepSeek** (V2, V3)
+
+400+ models across all parameter sizes.
+</Accordion>
+
+<Accordion title="Coding" icon="code">
+- **Qwen2.5-Coder / Qwen3-Coder** (0.5B to 32B)
+- **Meta CodeLlama** (7B, 13B, 34B, 70B)
+- **BigCode StarCoder2** (3B, 7B, 15B)
+- **WizardCoder** (Python-specialized variants)
+- **DeepSeek-Coder** (1.3B to 33B)
+- **IBM Granite Code** (3B, 8B, 20B, 34B)
+
+50+ specialized coding models.
+</Accordion>
+
+<Accordion title="Reasoning" icon="lightbulb">
+- **DeepSeek-R1** (1.5B to 671B)
+- **Microsoft Orca-2** (7B, 13B)
+- **Qwen QwQ** (32B preview)
+
+Chain-of-thought and step-by-step reasoning models.
+</Accordion>
+
+<Accordion title="Multimodal / Vision" icon="image">
+- **Llama 3.2 Vision** (11B, 90B)
+- **Llama 4 Scout / Maverick** (17B, 23B)
+- **Qwen2.5-VL** (2B, 7B, 72B)
+- **Microsoft Phi-3.5 Vision** (4.2B)
+
+Models with image understanding capabilities.
+</Accordion>
+
+<Accordion title="Embedding" icon="vector-square">
+- **nomic-embed-text** (v1, v1.5)
+- **BAAI bge** (small, base, large)
+- **Cohere embed-english** (v3.0)
+
+Dense vector embedding models for RAG and semantic search.
+</Accordion>
+
+<Accordion title="MoE Architectures" icon="arrows-split-up-and-left">
+- **Mistral Mixtral 8x7B / 8x22B**
+- **DeepSeek-V2 / V3** (236B, 671B)
+- **Qwen1.5-MoE** (A2.7B)
+
+Mixture-of-Experts models with expert offloading support.
+</Accordion>
+</AccordionGroup>
+
+## Model Sources
+
+All models are sourced from the HuggingFace Hub via the REST API. The database includes:
+
+- **Meta Llama** (meta-llama org)
+- **Mistral AI** (mistralai org)
+- **Qwen** (Qwen org)
+- **Google Gemma** (google org)
+- **Microsoft Phi** (microsoft org)
+- **DeepSeek** (deepseek-ai org)
+- **IBM Granite** (ibm-granite org)
+- **Allen Institute OLMo** (allenai org)
+- **xAI Grok** (xai-org)
+- **Cohere** (CohereForAI org)
+- **BigCode** (bigcode org)
+- **01.ai Yi** (01-ai org)
+- **Upstage Solar** (upstage org)
+- **TII Falcon** (tiiuae org)
+- **Zhipu GLM** (THUDM org)
+- **Moonshot Kimi** (Moonshot org)
+- **Baidu ERNIE** (PaddlePaddle org)
+
+## MoE Architecture Detection
+
+The scraper automatically identifies Mixture-of-Experts models via:
+
+1. **Config file inspection:**
+   ```python
+   if "num_local_experts" in config or "num_experts_per_tok" in config:
+       is_moe = True
+   ```
+
+2. **Architecture mapping:**
+   ```python
+   MOE_ARCHITECTURES = {
+       "mixtral", "qwen2moe", "deepseek_v2", "deepseek_v3"
+   }
+   ```
+
+3. **Active parameter calculation:**
+   ```python
+   active_params = shared_params + (expert_params * active_experts)
+   ```
+
+<Info>
+**Example:** Mixtral 8x7B
+- Total parameters: 46.7B
+- Active experts: 2/8
+- Active parameters: ~12.9B
+- VRAM savings: 23.9 GB → 6.6 GB with expert offloading
+</Info>
+
+## Update Process
+
+The model database is generated by `scripts/scrape_hf_models.py`, a standalone Python script with no pip dependencies (stdlib only).
+
+### Manual Update
+
+```bash
+# Run the scraper
+python3 scripts/scrape_hf_models.py
+
+# Rebuild llmfit with new data
+cargo build --release
+```
+
+### Automated Update
+
+```bash
+# Backs up existing data, runs scraper, validates JSON, rebuilds binary
+make update-models
+
+# Or use the update script directly
+./scripts/update_models.sh
+```
+
+### Scraper Options
+
+<ParamField path="--no-gguf-sources" type="flag">
+Skip GGUF source enrichment for faster scraping
+
+**Default:** Enabled (queries HuggingFace for GGUF repos)
+</ParamField>
+
+<ParamField path="--output" type="string">
+Output file path
+
+**Default:** `data/hf_models.json`
+</ParamField>
+
+### Adding a New Model
+
+1. Add the HuggingFace repo ID to `TARGET_MODELS` in `scripts/scrape_hf_models.py`:
+   ```python
+   TARGET_MODELS = [
+       "meta-llama/Llama-3.1-8B-Instruct",
+       "Qwen/Qwen2.5-7B-Instruct",
+       "your-org/your-new-model",  # Add here
+   ]
+   ```
+
+2. If the model is gated (requires HF authentication), add a fallback:
+   ```python
+   FALLBACKS = {
+       "your-org/your-new-model": {
+           "parameters_raw": 7_000_000_000,
+           "context_length": 8192,
+           "use_case": "Chat",
+       }
+   }
+   ```
+
+3. Run the update process:
+   ```bash
+   make update-models
+   ```
+
+<Check>
+The scraper validates JSON output before writing. If scraping fails, the original `hf_models.json` remains intact.
+</Check>
+
+## GGUF Source Caching
+
+GGUF source enrichment queries HuggingFace's search API to find quantized versions. Results are cached in `data/gguf_sources_cache.json` with a 7-day TTL:
+
+```json
+{
+  "meta-llama/Llama-3.1-8B-Instruct": {
+    "timestamp": "2025-03-01T10:30:00Z",
+    "sources": [
+      {"repo": "unsloth/Llama-3.1-8B-Instruct-GGUF", "provider": "unsloth"},
+      {"repo": "bartowski/Llama-3.1-8B-Instruct-GGUF", "provider": "bartowski"}
+    ]
+  }
+}
+```
+
+<Tip>
+To force a fresh GGUF source lookup, delete the cache file before running the scraper.
+</Tip>
+
+## Compile-Time Embedding
+
+The model database is embedded at compile time via Rust's `include_str!()` macro:
+
+```rust
+const HF_MODELS_JSON: &str = include_str!("../data/hf_models.json");
+
+pub fn new() -> Self {
+    let entries: Vec<HfModelEntry> = serde_json::from_str(HF_MODELS_JSON)
+        .expect("Failed to parse embedded hf_models.json");
+    // ...
+}
+```
+
+**Benefits:**
+- No runtime file I/O
+- Works offline
+- Single binary distribution
+- No external data dependencies
+
+<Warning>
+The database must be present at `data/hf_models.json` when building. If the file is missing or invalid, compilation will fail.
+</Warning>

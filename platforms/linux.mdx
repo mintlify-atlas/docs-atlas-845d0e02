@@ -1,0 +1,345 @@
+---
+title: Linux Platform Support
+description: GPU detection, installation methods, and troubleshooting for Linux
+---
+
+Linux has full support for all GPU vendors with multiple detection methods and fallbacks.
+
+## GPU Detection Methods
+
+### NVIDIA GPUs
+
+llmfit detects NVIDIA GPUs via two methods:
+
+#### 1. nvidia-smi (Primary)
+
+```bash
+# Multi-GPU query with addressing mode (unified memory detection)
+nvidia-smi --query-gpu=addressing_mode,memory.total,name --format=csv,noheader,nounits
+
+# Fallback query (older nvidia-smi versions)
+nvidia-smi --query-gpu=memory.total,name --format=csv,noheader,nounits
+```
+
+**Unified Memory Detection:**
+
+- NVIDIA Grace/DGX Spark (GB10, GB20): `addressing_mode` returns "ATS" (Address Translation Services)
+- When VRAM is unavailable, falls back to `/proc/meminfo` for total RAM
+
+**Multi-GPU Support:**
+
+- Aggregates same-model GPUs (e.g., 2x RTX 4090 → count=2, per-card VRAM=24GB)
+- Total VRAM = per-card VRAM × count (for tensor splitting across cards)
+
+#### 2. sysfs Fallback (Containers/Toolbx)
+
+When nvidia-smi is unavailable (common in containers):
+
+```bash
+# Check vendor ID in /sys/class/drm/card*/device/
+cat /sys/class/drm/card0/device/vendor
+# 0x10de = NVIDIA
+
+# Read VRAM
+cat /sys/class/drm/card0/device/mem_info_vram_total
+```
+
+**GPU name resolution:**
+
+- `lspci -nn` queries PCI slot from sysfs `uevent` file
+- Matches GPU model from lspci output (e.g., "GeForce RTX 2060")
+- Fallback to `flatpak-spawn --host lspci` in Flatpak environments
+
+**Backend detection:**
+
+- Checks `DRIVER=` in sysfs `uevent` file
+- `nvidia` driver → CUDA backend
+- Other drivers (nouveau, etc.) → Vulkan backend
+
+### AMD GPUs
+
+llmfit detects AMD GPUs via three methods:
+
+#### 1. rocm-smi (ROCm installed)
+
+```bash
+# VRAM detection
+rocm-smi --showmeminfo vram
+# Parses "Total Memory (B): 8589934592"
+
+# GPU name
+rocm-smi --showproductname
+# Looks for "Card Series" or "Card Model" lines
+```
+
+**Multi-GPU Support:**
+
+- Tracks per-GPU VRAM from multiple "Total" lines
+- Backend: ROCm
+
+#### 2. sysfs (No ROCm)
+
+```bash
+# Check vendor ID
+cat /sys/class/drm/card0/device/vendor
+# 0x1002 = AMD
+
+# Read VRAM
+cat /sys/class/drm/card0/device/mem_info_vram_total
+```
+
+**GPU name resolution:**
+
+- `lspci -nn` for AMD/ATI VGA/3D controllers
+- Backend: Vulkan (no ROCm)
+
+#### 3. Unified Memory APUs
+
+Ryzen AI series APUs (Strix Halo, Strix Point) share system RAM:
+
+```bash
+# Detection: CPU name contains "Ryzen AI"
+lscpu | grep "Model name"
+# AMD Ryzen AI MAX+ 395 w/ Radeon 8060S
+# AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+```
+
+**Behavior:**
+
+- VRAM = total system RAM (unified pool)
+- Backend: Vulkan
+- `unified_memory` flag set to `true`
+
+### Intel Arc GPUs
+
+llmfit detects Intel Arc via sysfs and lspci:
+
+#### Discrete GPUs (Arc A770, A370M)
+
+```bash
+# Check vendor ID
+cat /sys/class/drm/card0/device/vendor
+# 0x8086 = Intel
+
+# Read VRAM
+cat /sys/class/drm/card0/device/mem_info_vram_total
+```
+
+#### Integrated GPUs (Arc Graphics in Meteor Lake)
+
+```bash
+# lspci detection
+lspci -nn | grep -i "intel.*arc"
+# 00:02.0 VGA compatible controller [0300]: Intel Corporation Arc Graphics [8086:7d55]
+```
+
+**Behavior:**
+
+- Discrete: Reports exact VRAM
+- Integrated: Reports 0 VRAM (shares system memory)
+- Backend: SYCL (Intel oneAPI)
+
+### Ascend NPUs
+
+llmfit detects Huawei Ascend NPUs via `npu-smi`:
+
+```bash
+# List NPU IDs
+npu-smi info -l
+# NPU ID : 0
+# NPU ID : 1
+
+# Per-NPU memory info
+npu-smi info -t memory -i 0
+# HBM Capacity(MB) : 65536
+```
+
+**Behavior:**
+
+- Each NPU tracked separately (count=1 per NPU)
+- VRAM = HBM capacity in MB → GB
+- Backend: Ascend
+
+## Installation Methods
+
+### Homebrew (Recommended)
+
+```bash
+brew install llmfit
+```
+
+### Quick Install Script
+
+```bash
+# Install to /usr/local/bin (requires sudo)
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+
+# Install to ~/.local/bin (no sudo)
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+```
+
+### From Source
+
+```bash
+git clone https://github.com/AlexsJones/llmfit.git
+cd llmfit
+cargo build --release
+sudo cp target/release/llmfit /usr/local/bin/
+```
+
+## Troubleshooting
+
+### GPU Not Detected
+
+**NVIDIA:**
+
+1. Check if nvidia-smi works:
+   ```bash
+   nvidia-smi
+   ```
+   
+2. If nvidia-smi fails, check sysfs:
+   ```bash
+   ls /sys/class/drm/card*/device/vendor
+   cat /sys/class/drm/card0/device/vendor  # Should be 0x10de
+   ```
+
+3. Install nvidia-utils package:
+   ```bash
+   # Debian/Ubuntu
+   sudo apt install nvidia-utils
+   
+   # Fedora
+   sudo dnf install nvidia-driver
+   
+   # Arch
+   sudo pacman -S nvidia-utils
+   ```
+
+4. Manual override:
+   ```bash
+   llmfit --memory=24G system
+   ```
+
+**AMD:**
+
+1. Check if rocm-smi works:
+   ```bash
+   rocm-smi --showmeminfo vram
+   ```
+
+2. Install ROCm:
+   ```bash
+   # Ubuntu
+   wget https://repo.radeon.com/amdgpu-install/latest/ubuntu/jammy/amdgpu-install_*.deb
+   sudo dpkg -i amdgpu-install_*.deb
+   sudo amdgpu-install --usecase=rocm
+   
+   # Check /sys/class/drm for AMD cards
+   grep -l 0x1002 /sys/class/drm/card*/device/vendor
+   ```
+
+3. Sysfs fallback (no ROCm):
+   ```bash
+   cat /sys/class/drm/card0/device/mem_info_vram_total
+   ```
+
+**Intel Arc:**
+
+1. Check sysfs vendor ID:
+   ```bash
+   grep -l 0x8086 /sys/class/drm/card*/device/vendor
+   ```
+
+2. Check lspci:
+   ```bash
+   lspci | grep -i "intel.*arc"
+   ```
+
+3. Install Intel compute runtime:
+   ```bash
+   # Ubuntu
+   sudo apt install intel-opencl-icd
+   ```
+
+### VRAM Shows 0 or Wrong Value
+
+**Broken nvidia-smi:**
+
+```bash
+# Check if driver is loaded
+lsmod | grep nvidia
+
+# Reinstall driver
+sudo apt reinstall nvidia-driver-535  # or your version
+```
+
+**VM/Passthrough setups:**
+
+VRAM reporting often fails in VMs. Use manual override:
+
+```bash
+llmfit --memory=16G
+```
+
+**Container/Toolbx:**
+
+Sysfs fallback should work. If not, check mount points:
+
+```bash
+ls /sys/class/drm/card0/device/
+# Should see vendor, mem_info_vram_total, etc.
+```
+
+### WSL-Specific Issues
+
+llmfit detects WSL via environment variables and `/proc/version`:
+
+```bash
+echo $WSL_DISTRO_NAME
+cat /proc/version | grep -i microsoft
+```
+
+**NVIDIA in WSL:**
+
+- Install NVIDIA CUDA on WSL2: https://docs.nvidia.com/cuda/wsl-user-guide/
+- nvidia-smi should work once CUDA drivers are installed
+
+**AMD in WSL:**
+
+- Limited support; ROCm not officially supported in WSL
+- Use CPU-only mode or run llmfit natively on Windows
+
+### Multi-GPU Detection Issues
+
+**Same-model cards not grouped:**
+
+Check nvidia-smi output format:
+
+```bash
+nvidia-smi --query-gpu=memory.total,name --format=csv,noheader,nounits
+```
+
+Expected output:
+```
+24564, NVIDIA GeForce RTX 4090
+24564, NVIDIA GeForce RTX 4090
+```
+
+llmfit groups by exact name match.
+
+**Different-model cards:**
+
+llmfit uses the GPU with the most VRAM as primary:
+
+```bash
+llmfit system
+# GPU 1: NVIDIA GeForce RTX 4090 (24.00 GB VRAM, CUDA)
+# GPU 2: NVIDIA GeForce RTX 3060 (12.00 GB VRAM, CUDA)
+```
+
+## Next Steps
+
+- [Platform Overview](/platforms/overview)
+- [macOS Platform Guide](/platforms/macos)
+- [Windows Platform Guide](/platforms/windows)

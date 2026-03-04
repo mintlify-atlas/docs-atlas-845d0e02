@@ -1,0 +1,127 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "llmfit",
+  "projectDescription": "Terminal tool that right-sizes LLM models to your system's RAM, CPU, and GPU.",
+  "theme": "aspen",
+  "primaryColor": "#eabfac",
+  "lightColor": "#796a7b",
+  "darkColor": "#c0c093",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/how-it-works",
+              "concepts/model-database",
+              "concepts/scoring-system",
+              "concepts/fit-analysis"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/tui-mode",
+              "guides/cli-mode",
+              "guides/rest-api",
+              "guides/provider-integration",
+              "guides/advanced-usage"
+            ]
+          },
+          {
+            "group": "Platform Support",
+            "pages": [
+              "platforms/overview",
+              "platforms/linux",
+              "platforms/macos",
+              "platforms/windows"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "CLI Commands",
+            "pages": [
+              "api/commands/llmfit",
+              "api/commands/system",
+              "api/commands/list",
+              "api/commands/fit",
+              "api/commands/search",
+              "api/commands/info",
+              "api/commands/recommend",
+              "api/commands/plan",
+              "api/commands/serve"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "api/rest/overview",
+              "api/rest/endpoints",
+              "api/rest/query-parameters",
+              "api/rest/response-schemas"
+            ]
+          },
+          {
+            "group": "Core Library",
+            "pages": [
+              "api/library/overview",
+              "api/library/hardware",
+              "api/library/models",
+              "api/library/fit",
+              "api/library/providers"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Hardware detection (RAM, CPU, multi-GPU with NVIDIA/AMD/Intel/Apple Silicon)",
+    "Interactive TUI with real-time model filtering and search",
+    "Dynamic quantization selection (Q8_0 to Q2_K) based on available memory",
+    "Multi-dimensional scoring across quality, speed, fit, and context",
+    "MoE (Mixture-of-Experts) architecture support with expert offloading",
+    "Speed estimation using GPU memory bandwidth for 80+ GPUs",
+    "Provider integration (Ollama, llama.cpp, MLX) with install detection",
+    "Plan mode for hardware requirement estimation",
+    "REST API server for cluster scheduling and aggregation",
+    "Database of 100+ models from HuggingFace with automatic updates"
+  ],
+  "publicApiSurface": [
+    "llmfit (default TUI mode)",
+    "llmfit --cli (classic table output)",
+    "llmfit system (hardware specs)",
+    "llmfit list (all models)",
+    "llmfit fit [--perfect] [-n <limit>]",
+    "llmfit search <query>",
+    "llmfit info <model-name>",
+    "llmfit recommend [--json] [--use-case <category>] [--limit <n>]",
+    "llmfit plan <model-name> [--context <size>] [--quant <type>] [--target-tps <n>] [--json]",
+    "llmfit serve [--host <addr>] [--port <n>]",
+    "GET /health",
+    "GET /api/v1/system",
+    "GET /api/v1/models",
+    "GET /api/v1/models/top",
+    "GET /api/v1/models/{name}",
+    "SystemSpecs::detect()",
+    "ModelDatabase::new()",
+    "ModelFit::analyze()",
+    "OllamaProvider",
+    "LlamaCppProvider",
+    "MlxProvider"
+  ]
+}

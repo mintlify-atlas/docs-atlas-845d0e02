@@ -1,0 +1,194 @@
+---
+title: llmfit run
+description: Run a downloaded GGUF model with llama-cli or llama-server
+---
+
+## Syntax
+
+```bash
+llmfit run <model> [OPTIONS]
+```
+
+## Description
+
+Run a downloaded GGUF model using `llama-cli` (interactive chat) or `llama-server` (OpenAI-compatible API server). The command searches for the model in your local llama.cpp cache and launches it with appropriate hardware acceleration settings.
+
+Requires `llama-cli` (for interactive mode) or `llama-server` (for server mode) to be installed and available in your PATH.
+
+## Arguments
+
+<ParamField path="model" type="string" required>
+  Model file or name to run. Can be:
+  - Full path to a GGUF file
+  - Model filename (searches local cache)
+  - Partial model name (e.g., `llama-8b`, `mistral`)
+</ParamField>
+
+## Options
+
+<ParamField path="--server" type="boolean" default="false">
+  Run as an OpenAI-compatible API server instead of interactive chat. Uses `llama-server` instead of `llama-cli`.
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8080">
+  Port for the API server (only applies when `--server` is used).
+</ParamField>
+
+<ParamField path="-g, --ngl" type="integer" default="-1">
+  Number of GPU layers to offload. Use `-1` to offload all layers to GPU (full GPU inference). Use `0` for CPU-only inference. Values between 0 and the model's layer count enable partial GPU offloading.
+</ParamField>
+
+<ParamField path="-c, --ctx-size" type="integer" default="4096">
+  Context size in tokens. Maximum number of tokens the model can process in a single prompt/conversation. Larger values require more VRAM/RAM.
+</ParamField>
+
+## Usage Examples
+
+### Run interactive chat (default)
+
+```bash
+llmfit run "Llama-3.1-8B-Instruct.Q4_K_M.gguf"
+```
+
+Launches an interactive chat session with the model using `llama-cli`.
+
+### Run as API server
+
+```bash
+llmfit run "mistral-7b" --server --port 8080
+```
+
+Starts an OpenAI-compatible API server on port 8080. You can then make requests:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mistral-7b",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+### Run with custom GPU offload
+
+```bash
+llmfit run "qwen-14b" --ngl 20
+```
+
+Offloads 20 layers to GPU, keeping the rest on CPU. Useful for models that don't fully fit in VRAM.
+
+### Run with larger context
+
+```bash
+llmfit run "llama-8b" --ctx-size 8192
+```
+
+Increases context window to 8192 tokens (from default 4096). Requires more memory.
+
+### CPU-only inference
+
+```bash
+llmfit run "mistral-7b" --ngl 0
+```
+
+Forces CPU-only inference by disabling GPU offload.
+
+### Combined options
+
+```bash
+llmfit run "codellama-13b" --server --port 8888 --ngl 30 --ctx-size 16384
+```
+
+Runs as API server on port 8888 with 30 GPU layers and 16K context.
+
+## Example Output
+
+### Interactive Mode
+
+```
+Searching for model: Llama-3.1-8B-Instruct.Q4_K_M.gguf
+Found: ~/.cache/llama.cpp/bartowski_Llama-3.1-8B-Instruct-GGUF/Llama-3.1-8B-Instruct.Q4_K_M.gguf
+
+Launching llama-cli with:
+  Model: Llama-3.1-8B-Instruct.Q4_K_M.gguf
+  GPU layers: -1 (all)
+  Context size: 4096 tokens
+
+llama_model_load: loaded model (4.9 GB)
+llama_new_context_with_model: compute buffer = 512 MB
+llama_new_context_with_model: KV self size = 512 MB
+
+> Hello! How can I help you today?
+Hello! I'm here to assist you. What would you like to know or discuss?
+
+> 
+```
+
+### Server Mode
+
+```
+Searching for model: mistral-7b
+Found: ~/.cache/llama.cpp/TheBloke_Mistral-7B-Instruct-v0.2-GGUF/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+
+Launching llama-server with:
+  Model: mistral-7b-instruct-v0.2.Q4_K_M.gguf
+  Port: 8080
+  GPU layers: -1 (all)
+  Context size: 4096 tokens
+
+Server listening on http://0.0.0.0:8080
+
+OpenAI-compatible endpoints:
+  POST http://localhost:8080/v1/chat/completions
+  POST http://localhost:8080/v1/completions
+  GET  http://localhost:8080/v1/models
+```
+
+## GPU Layer Offloading
+
+The `--ngl` (number of GPU layers) flag controls how much of the model runs on GPU vs CPU:
+
+| Value | Behavior | Use Case |
+|-------|----------|----------|
+| `-1` | All layers on GPU | Best performance when model fits in VRAM |
+| `0` | CPU-only | No GPU available or testing CPU performance |
+| `1-N` | Partial offload | Model too large for VRAM; offload as many layers as fit |
+
+<Tip>
+  Use `--ngl -1` for maximum speed when your GPU has enough VRAM. If you get out-of-memory errors, try reducing to a specific number like `--ngl 20`.
+</Tip>
+
+## Context Size Guidelines
+
+| Context Size | Memory Impact | Use Case |
+|--------------|---------------|----------|
+| 2048 | Low | Short conversations, code completion |
+| 4096 (default) | Moderate | General chat, standard conversations |
+| 8192 | High | Long conversations, document analysis |
+| 16384+ | Very High | Large document processing, long context windows |
+
+<Warning>
+  Larger context sizes require significantly more VRAM/RAM. A 7B model at 4K context might use 6GB VRAM, but at 16K context could use 10GB+.
+</Warning>
+
+## Requirements
+
+- **llama.cpp** must be installed with `llama-cli` (for interactive) or `llama-server` (for API mode) in your PATH
+- Install from: https://github.com/ggml-org/llama.cpp
+- Models must be downloaded first using `llmfit download` or manually placed in the llama.cpp cache
+
+## Notes
+
+- The command automatically detects your GPU and enables Metal (Apple Silicon), CUDA (NVIDIA), or ROCm (AMD) acceleration if available
+- Model search checks:
+  1. Exact filename in current directory
+  2. Exact filename in `~/.cache/llama.cpp/`
+  3. Partial name match in cache (e.g., `llama-8b` matches `Llama-3.1-8B-Instruct.Q4_K_M.gguf`)
+- Server mode is fully compatible with OpenAI API clients (LangChain, LiteLLM, etc.)
+- Interactive mode supports multi-turn conversations with automatic context management
+
+## Related Commands
+
+- [llmfit download](/api/commands/download) - Download GGUF models from HuggingFace
+- [llmfit fit](/api/commands/fit) - Find models that fit your hardware
+- [llmfit plan](/api/commands/plan) - Estimate hardware requirements for a model

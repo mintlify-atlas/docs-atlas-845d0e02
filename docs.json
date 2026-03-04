@@ -80,6 +80,9 @@
               "api/commands/info",
               "api/commands/recommend",
               "api/commands/plan",
+              "api/commands/download",
+              "api/commands/hf-search",
+              "api/commands/run",
               "api/commands/serve"
             ]
           },

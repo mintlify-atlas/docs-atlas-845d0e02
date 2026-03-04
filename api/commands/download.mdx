@@ -1,0 +1,127 @@
+---
+title: llmfit download
+description: Download GGUF models from HuggingFace for use with llama.cpp
+---
+
+## Syntax
+
+```bash
+llmfit download <model> [OPTIONS]
+```
+
+## Description
+
+Download a GGUF model from HuggingFace for use with llama.cpp. The command accepts multiple input formats:
+- HuggingFace repo (e.g., `bartowski/Llama-3.1-8B-Instruct-GGUF`)
+- Search query (e.g., `llama 8b`)
+- Known model name (e.g., `llama-3.1-8b-instruct`)
+
+If no quantization is specified, llmfit automatically selects the best quantization that fits your available hardware.
+
+## Arguments
+
+<ParamField path="model" type="string" required>
+  Model to download. Can be a HuggingFace repo, search query, or known model name.
+</ParamField>
+
+## Options
+
+<ParamField path="-q, --quant" type="string">
+  Specific GGUF quantization to download (e.g., `Q4_K_M`, `Q8_0`). If omitted, selects the best quantization that fits your hardware based on available VRAM/RAM.
+</ParamField>
+
+<ParamField path="--budget" type="float">
+  Maximum memory budget in GB for quantization selection. Useful for constraining downloads to models that fit within a specific memory limit.
+</ParamField>
+
+<ParamField path="--list" type="boolean" default="false">
+  List available GGUF files in the repository without downloading. Useful for exploring quantization options before committing to a download.
+</ParamField>
+
+<ParamField path="--memory" type="string">
+  Override GPU VRAM size (e.g., `32G`, `32000M`, `1.5T`). Global flag for hardware detection override.
+</ParamField>
+
+<ParamField path="--max-context" type="integer">
+  Cap context length used for memory estimation (tokens). Global flag.
+</ParamField>
+
+## Usage Examples
+
+### Download with automatic quantization selection
+
+```bash
+llmfit download "llama 8b"
+```
+
+Searches for "llama 8b", finds matching GGUF repos, and downloads the best quantization that fits your hardware.
+
+### Download specific quantization
+
+```bash
+llmfit download bartowski/Llama-3.1-8B-Instruct-GGUF --quant Q4_K_M
+```
+
+Downloads the Q4_K_M quantization of the specified model.
+
+### List available quantizations
+
+```bash
+llmfit download "mistral 7b" --list
+```
+
+Shows all available GGUF files in the repository without downloading.
+
+### Download with memory budget
+
+```bash
+llmfit download "qwen 14b" --budget 16
+```
+
+Downloads the highest quality quantization that fits within 16GB of memory.
+
+### Download with VRAM override
+
+```bash
+llmfit --memory 24G download "llama 70b"
+```
+
+Overrides GPU VRAM to 24GB for quantization selection, then downloads the best fit.
+
+## Example Output
+
+```
+Searching for model: llama 8b
+Found: bartowski/Llama-3.1-8B-Instruct-GGUF
+
+Available quantizations:
+  Q8_0      (8.5 GB)  - Best quality
+  Q6_K      (6.6 GB)
+  Q5_K_M    (5.7 GB)
+  Q4_K_M    (4.9 GB)  - Recommended for your hardware (24GB VRAM)
+  Q3_K_M    (4.0 GB)
+  Q2_K      (3.3 GB)
+
+Downloading: Llama-3.1-8B-Instruct.Q4_K_M.gguf
+[████████████████████████████] 4.9 GB / 4.9 GB (100%) ETA: 0s
+
+Download complete!
+Model saved to: ~/.cache/llama.cpp/bartowski_Llama-3.1-8B-Instruct-GGUF/Llama-3.1-8B-Instruct.Q4_K_M.gguf
+
+Run with:
+  llmfit run "Llama-3.1-8B-Instruct.Q4_K_M.gguf"
+  llama-cli -m ~/.cache/llama.cpp/bartowski_Llama-3.1-8B-Instruct-GGUF/Llama-3.1-8B-Instruct.Q4_K_M.gguf
+```
+
+## Notes
+
+- Downloads are cached in `~/.cache/llama.cpp/` to avoid re-downloading
+- If `llama-cli` or `llama-server` is not installed, llmfit will still download the model but won't be able to run it via the `run` command
+- The `--list` flag is useful for exploring available quantizations before committing to a large download
+- Quantization selection considers both VRAM (for GPU inference) and RAM (for CPU fallback)
+
+## Related Commands
+
+- [llmfit run](/api/commands/run) - Run a downloaded GGUF model
+- [llmfit hf-search](/api/commands/hf-search) - Search HuggingFace for GGUF models
+- [llmfit fit](/api/commands/fit) - Find models that fit your hardware

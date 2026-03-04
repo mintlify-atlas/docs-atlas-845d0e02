@@ -1,0 +1,131 @@
+---
+title: llmfit hf-search
+description: Search HuggingFace for GGUF models compatible with llama.cpp
+---
+
+## Syntax
+
+```bash
+llmfit hf-search <query> [OPTIONS]
+```
+
+## Description
+
+Search HuggingFace for GGUF models that are compatible with llama.cpp. This command queries the HuggingFace Hub API to find repositories containing GGUF files, which are quantized model formats optimized for local inference.
+
+Use this command to discover available models before downloading them with `llmfit download`.
+
+## Arguments
+
+<ParamField path="query" type="string" required>
+  Search query. Can include model name, architecture, or other keywords (e.g., `llama`, `mistral`, `coding`).
+</ParamField>
+
+## Options
+
+<ParamField path="-n, --limit" type="integer" default="10">
+  Maximum number of results to return. Range: 1-100.
+</ParamField>
+
+## Usage Examples
+
+### Search for Llama models
+
+```bash
+llmfit hf-search llama
+```
+
+Returns the top 10 GGUF repositories containing "llama" in their name or description.
+
+### Search for coding models with limit
+
+```bash
+llmfit hf-search "coding" -n 20
+```
+
+Returns up to 20 GGUF repositories related to coding models.
+
+### Search for specific architecture
+
+```bash
+llmfit hf-search mistral-7b
+```
+
+Finds GGUF repositories for Mistral 7B models.
+
+### Search for quantized versions
+
+```bash
+llmfit hf-search "qwen 14b gguf"
+```
+
+Searches specifically for Qwen 14B GGUF models.
+
+## Example Output
+
+```
+Searching HuggingFace for GGUF models: "llama"
+
+Found 10 repositories:
+
+1. bartowski/Llama-3.1-8B-Instruct-GGUF
+   Downloads: 1.2M | Likes: 342 | Updated: 2025-02-15
+   Tags: llama, text-generation, gguf
+   
+2. bartowski/Llama-3.1-70B-Instruct-GGUF
+   Downloads: 856K | Likes: 287 | Updated: 2025-02-14
+   Tags: llama, text-generation, gguf
+   
+3. TheBloke/Llama-2-7B-GGUF
+   Downloads: 2.4M | Likes: 512 | Updated: 2024-09-10
+   Tags: llama, llama-2, gguf
+
+4. QuantFactory/Meta-Llama-3-8B-Instruct-GGUF
+   Downloads: 645K | Likes: 198 | Updated: 2025-01-20
+   Tags: llama, gguf, quantized
+
+5. lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF
+   Downloads: 523K | Likes: 156 | Updated: 2025-02-01
+   Tags: llama, gguf, lmstudio
+
+[...]
+
+To download a model:
+  llmfit download <repo-name>
+  
+Example:
+  llmfit download bartowski/Llama-3.1-8B-Instruct-GGUF
+```
+
+## Output Fields
+
+Each result includes:
+
+- **Repository name**: Full HuggingFace repo identifier (user/repo)
+- **Download count**: Total number of downloads from the Hub
+- **Likes**: Number of likes/stars on HuggingFace
+- **Last updated**: Most recent update date
+- **Tags**: Repository tags indicating model type and format
+
+## Search Tips
+
+<Tip>
+  Use specific model names (e.g., "llama-3.1-8b") for targeted results, or broader terms (e.g., "coding", "chat") for discovery.
+</Tip>
+
+<Note>
+  Results are sorted by relevance and popularity. The most popular and recently updated models appear first.
+</Note>
+
+## Notes
+
+- Only repositories containing GGUF files are returned
+- Results include official quantizations from popular providers like bartowski, TheBloke, QuantFactory, and lmstudio-community
+- The search queries the HuggingFace Hub API, so an internet connection is required
+- Repository metadata (downloads, likes) is fetched in real-time
+
+## Related Commands
+
+- [llmfit download](/api/commands/download) - Download a GGUF model from HuggingFace
+- [llmfit search](/api/commands/search) - Search llmfit's built-in model database
+- [llmfit list](/api/commands/list) - List all models in llmfit's database
